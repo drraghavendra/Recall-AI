@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -8,6 +9,11 @@ CREATE TABLE IF NOT EXISTS faces (
     face_id TEXT PRIMARY KEY,
     provider_face_id TEXT NOT NULL,
     enrolled_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS face_portraits (
+    face_id TEXT PRIMARY KEY REFERENCES faces(face_id) ON DELETE CASCADE,
+    image BLOB NOT NULL,
+    saved_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS face_samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +85,26 @@ class Database:
             "INSERT INTO faces (face_id, provider_face_id, enrolled_at) VALUES (?, ?, ?)",
             (face_id, provider_face_id, time.time()),
         )
+
+    def next_face_id(self) -> str:
+        """Allocate the next stable, human-readable ID for a newly seen person."""
+        rows = self._conn.execute("SELECT face_id FROM faces").fetchall()
+        numbers = [int(match.group(1)) for row in rows if (match := re.fullmatch(r"person_(\d+)", row["face_id"]))]
+        return f"person_{max(numbers, default=0) + 1:03d}"
+
+    def save_face_portrait(self, face_id: str, image: bytes) -> None:
+        self._execute(
+            "INSERT OR IGNORE INTO face_portraits(face_id, image, saved_at) VALUES (?, ?, ?)",
+            (face_id, image, time.time()),
+        )
+
+    def get_face_portrait(self, face_id: str) -> bytes | None:
+        row = self._conn.execute("SELECT image FROM face_portraits WHERE face_id = ?", (face_id,)).fetchone()
+        return None if row is None else row["image"]
+
+    def delete_face_portrait(self, face_id: str) -> bool:
+        cur = self._execute("DELETE FROM face_portraits WHERE face_id = ?", (face_id,))
+        return cur.rowcount > 0
 
     def insert_face_sample(self, ts: float, focused_face_id: str | None, confidence: float) -> None:
         self._execute(

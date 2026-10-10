@@ -9,6 +9,7 @@ class FramesMessage(BaseModel):
     type: Literal["frames"]
     ts: float
     frames: list[str] = Field(min_length=1, description="base64-encoded JPEG frames")
+    store_portrait: bool = False
 
 
 class AudioMessage(BaseModel):

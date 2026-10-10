@@ -64,6 +64,16 @@ class ConversationMatcher:
         self._db.insert_segment(
             conv.conv_id, utterance.start, utterance.end, utterance.text, utterance.speaker, face_id
         )
+        self._publish(
+            {
+                "type": "transcript",
+                "ts": utterance.start,
+                "end_ts": utterance.end,
+                "text": utterance.text,
+                "speaker": utterance.speaker,
+                "face_id": face_id,
+            }
+        )
         conv.segment_count += 1
         if conv is self._open:
             conv.last_speech_end = max(conv.last_speech_end, utterance.end)

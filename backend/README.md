@@ -32,11 +32,13 @@ export RECALL_LOCAL_FACE_DB_PATH=recall_faces.sqlite3
 .venv/bin/uvicorn recall.main:app --port 8000 --workers 1
 ```
 
-InsightFace uses the local `buffalo_l` CPU model and a SQLite embedding collection. It does not
-send face images to AWS or retain the original image. The first run downloads model files.
-Use consented images only; biometric embeddings remain sensitive data. Check the model/license
-terms before commercial use. `mock` is useful for API/UI development without a camera or cloud
-face provider.
+InsightFace uses the local `buffalo_l` CPU model and a SQLite embedding collection. With the
+browser consent toggle enabled, the backend also saves one representative JPEG frame for each
+focused person to its local `recall.db`; the original stream is not archived. You can review that
+image in the person card and remove it there. Removing the image also pauses further image saving
+until consent is enabled again. Face images and embeddings are sensitive data. Use consented
+images only, and check the model/license terms before commercial use. `mock` is useful for API/UI
+development without a camera or cloud face provider.
 
 `--workers 1` is required: the focused face, the open conversation and the persona locks
 are in-process state. First start downloads the Whisper and Silero models and creates the
@@ -93,8 +95,9 @@ Send one `frames` message per sampling window (client default: 1 frame / 5s, set
 `--window` / `--frames`) and audio continuously
 with no gaps, using the same clock (`time.time()`) for both `ts`.
 
-**Server → client**: `face_update {ts, face_id, is_new, confidence}`,
+**Server → client**: `face_update {ts, face_id, is_new, confidence, portrait_url}`,
 `conversation_started` / `conversation_ended {conv_id, face_id, ts}`,
+`transcript {ts, end_ts, text, speaker, face_id}`,
 `persona_updated {face_id, persona}`.
 
 Client read-path rule: on `face_update`, fetch `/persona/{face_id}` only when the face
