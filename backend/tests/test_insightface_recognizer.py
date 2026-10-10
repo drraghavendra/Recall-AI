@@ -110,3 +110,15 @@ def test_search_all_matches_every_face_largest_first(tmp_path, monkeypatch):
 
     assert [hit.result.face_id for hit in hits] == ["person_002", "person_001"]
     assert recognizer.search(b"jpeg").face_id == "person_002"
+
+
+def test_focused_face_is_the_one_nearest_the_centre_unless_much_smaller():
+    from recall.face.insightface import focused_first
+
+    left_big = ((0.05, 0.3, 0.2, 0.40), "left, biggest")
+    centre = ((0.42, 0.3, 0.16, 0.30), "centre")
+    tiny_centre = ((0.48, 0.45, 0.04, 0.08), "tiny, dead centre")
+    faces = [left_big, centre, tiny_centre]  # largest first, as detected
+    assert focused_first(faces, "center")[0] == centre
+    assert focused_first(faces, "largest")[0] == left_big
+    assert focused_first([left_big, tiny_centre], "center")[0] == left_big

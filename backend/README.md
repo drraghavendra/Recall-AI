@@ -162,6 +162,10 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
   it was spoken. The browser client sends ~5 fps `lip_frames` while it hears sound for the second
   check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
   are heuristics; tune them with the per-utterance `level` and `lip check` log lines.
+- **The focused face** (`RECALL_FOCUS_RULE`) is the one nearest the centre of the frame, among faces
+  at least half as tall as the largest — on glasses, the person you're looking at. It is the face
+  that gets enrolled, photographed and credited with other people's speech (InsightFace only;
+  Rekognition always uses the largest face).
 - **Other known faces in frame** are listed in `face_update.others` (display only: only the focused
   face is enrolled or attributed speech). Needs a provider with `search_all` (InsightFace).
 - **Transcription must keep up with real time** or the write path falls progressively

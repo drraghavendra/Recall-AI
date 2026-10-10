@@ -11,6 +11,26 @@ import numpy as np
 from recall.face.recognizer import FaceBox, FaceHit, SearchResult
 
 
+def focused_first(faces: list, focus: str) -> list:
+    """Move the focused face to the front of `faces` (each item starts with its box, largest face first).
+
+    "center": the face nearest the middle of the frame, among faces at least half as tall as the
+    largest — on glasses you look at the person you're talking to, and a small face in the background
+    can't win just by being central. "largest": the biggest face.
+    """
+    if focus != "center" or len(faces) < 2:
+        return faces
+    tallest = max(item[0][3] for item in faces)
+    candidates = [i for i, item in enumerate(faces) if item[0][3] >= 0.5 * tallest]
+
+    def distance(i: int) -> float:
+        x, y, w, h = faces[i][0]
+        return ((x + w / 2 - 0.5) ** 2 + (y + h / 2 - 0.5) ** 2) ** 0.5
+
+    chosen = min(candidates, key=distance)
+    return [faces[chosen]] + [item for i, item in enumerate(faces) if i != chosen]
+
+
 class InsightFaceRecognizer:
     """Detect faces and match normalized embeddings against a local SQLite gallery.
 
@@ -30,6 +50,7 @@ class InsightFaceRecognizer:
         min_enroll_face_height: float = 0.15,
         gallery_size: int = 5,
         gallery_add_below: float = 0.72,
+        focus: str = "center",
     ):
         if not 0.0 <= match_threshold <= 1.0:
             raise ValueError("InsightFace match threshold must be between 0 and 1")
@@ -40,6 +61,7 @@ class InsightFaceRecognizer:
         self._min_enroll_face_height = min_enroll_face_height
         self._gallery_size = gallery_size
         self._gallery_add_below = gallery_add_below
+        self._focus = focus
         self._lock = RLock()
         if face_app is None:
             try:
@@ -89,18 +111,17 @@ class InsightFaceRecognizer:
         return max(0.0, float(bbox[2] - bbox[0])) * max(0.0, float(bbox[3] - bbox[1]))
 
     def _faces(self, image_bytes: bytes) -> list[tuple[FaceBox, np.ndarray | None]]:
-        """Every detected face, largest first, with its normalized embedding (None if unusable)."""
+        """Every detected face, focused face first, with its normalized embedding (None if unusable)."""
         image = self._decode(image_bytes)
         if image is None:
             return []
         height, width = getattr(image, "shape", (1, 1))[:2]
-        faces = sorted(self._face_app.get(image), key=lambda face: self._area(face.bbox), reverse=True)
         found = []
-        for face in faces:
+        for face in sorted(self._face_app.get(image), key=lambda face: self._area(face.bbox), reverse=True):
             x0, y0, x1, y1 = (float(v) for v in face.bbox[:4])
             box = (x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height)
             found.append((box, self._normalized_embedding(face)))
-        return found
+        return focused_first(found, self._focus)
 
     def _normalized_embedding(self, face) -> np.ndarray | None:
         # A hand over the face or a blurry detection gives a junk embedding; better to see "no face" than guess.

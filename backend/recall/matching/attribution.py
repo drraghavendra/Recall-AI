@@ -19,13 +19,15 @@ class AttributionGate:
     """Decides who, if anyone in view, said someone else's utterance.
 
     Two checks, each skipped when it has no data: speech quieter than `min_level_dbfs` is someone
-    further away; and when we watched mouths during the utterance, it belongs to the face whose mouth
-    moved most, or to no one in view (background) if none did.
+    further away; and when we watched mouths during the utterance and none moved, it's no one in view
+    (background). With `lips_pick_speaker`, it also names the face whose mouth moved most; otherwise
+    the caller credits the focused face.
     """
 
-    def __init__(self, min_level_dbfs: float | None, lips: LipActivityTracker | None):
+    def __init__(self, min_level_dbfs: float | None, lips: LipActivityTracker | None, lips_pick_speaker: bool = True):
         self._min_level_dbfs = min_level_dbfs
         self._lips = lips
+        self._lips_pick_speaker = lips_pick_speaker
 
     def __call__(self, utterance: Utterance) -> Verdict:
         level = utterance.level_dbfs
@@ -38,4 +40,4 @@ class AttributionGate:
         speaker, decided = self._lips.speaker_during(utterance.start, utterance.end)
         if decided and speaker is None:
             return Verdict(reason="lips_still")
-        return Verdict(face_id=speaker)
+        return Verdict(face_id=speaker if self._lips_pick_speaker else None)

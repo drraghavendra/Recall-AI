@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     local_face_new_face_threshold: float = 0.35
     local_face_min_det_score: float = 0.6
     frames_per_window: int = 1
+    # Which face is "in focus" (enrolled, photographed, and credited with other people's speech):
+    # "center" = nearest the middle of the frame (on glasses, who you're looking at), "largest" = biggest.
+    focus_rule: Literal["center", "largest"] = "center"
     face_confirm_windows: int = 2
     face_absent_confirm_windows: int = 3
 
@@ -62,6 +65,9 @@ class Settings(BaseSettings):
     # Lip check (InsightFace only): the client sends ~5 fps lip frames while it hears sound. Speech during
     # which the focused face's mouth openness (inner-lip gap / mouth width) barely varied is background.
     lip_check: bool = True
+    # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
+    # True: speech goes to whichever face's mouth moved most.
+    lip_picks_speaker: bool = False
     lip_min_openness_std: float = 0.02
 
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)

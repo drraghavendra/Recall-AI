@@ -83,6 +83,7 @@ def _build_recognizer(settings: Settings) -> FaceRecognizer:
             settings.local_face_match_threshold,
             settings.local_face_new_face_threshold,
             settings.local_face_min_det_score,
+            focus=settings.focus_rule,
         )
     recognizer = RekognitionRecognizer(
         settings.rekognition_collection_id, settings.aws_region, settings.face_match_threshold
@@ -143,7 +144,9 @@ def build_services(settings: Settings) -> Services:
         settings.min_silence_duration_s,
         hub.publish,
         lambda _conv: persona.request_run(),  # a conversation just ended: don't wait for the cycle
-        gate=AttributionGate(settings.min_other_speech_dbfs, None if lips is None else lips.tracker),
+        gate=AttributionGate(
+            settings.min_other_speech_dbfs, None if lips is None else lips.tracker, settings.lip_picks_speaker
+        ),
         max_utterance_s=settings.max_utterance_s,
     )
 
