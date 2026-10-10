@@ -31,6 +31,7 @@ ml = [
 local-face = ["insightface>=0.7.3", "onnxruntime>=1.17"]
 # Optional speech-to-text providers (RECALL_STT_BACKEND); faster-whisper in [ml] stays the default.
 parakeet = ["onnx-asr[cpu,hub]>=0.12"]
+sarvam = ["httpx>=0.27"]
 dev = ["pytest>=8", "httpx>=0.27"]
 
 [tool.setuptools.packages.find]

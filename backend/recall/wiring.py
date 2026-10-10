@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -92,6 +93,18 @@ def _build_transcriber(settings: Settings) -> Transcriber:
 
         log.info("speech-to-text: Parakeet %s (%s)", settings.parakeet_model, settings.parakeet_quantization or "fp32")
         return ParakeetTranscriber(settings.parakeet_model, settings.parakeet_quantization)
+    if settings.stt_backend == "sarvam":
+        from recall.audio.sarvam import SarvamTranscriber
+
+        log.info("speech-to-text: Sarvam API %s (language %s)", settings.sarvam_model, settings.sarvam_language_code)
+        return SarvamTranscriber(
+            os.environ.get("SARVAM_API_KEY", ""),
+            settings.sarvam_model,
+            settings.sarvam_language_code,
+            settings.sarvam_mode,
+            settings.sarvam_timeout_s,
+            settings.sample_rate,
+        )
     from recall.audio.transcriber import FasterWhisperTranscriber
 
     log.info("speech-to-text: faster-whisper %s", settings.whisper_model)
