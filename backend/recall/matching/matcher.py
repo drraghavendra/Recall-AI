@@ -6,6 +6,7 @@ from recall.audio.types import Utterance
 from recall.db import Database
 from recall.events import Publish
 from recall.face.tracker import FocusedFaceTracker
+from recall.matching.attribution import Verdict
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class ConversationMatcher:
         min_silence_s: float,
         publish: Publish,
         on_finalized: Callable[[Conversation], None],
-        gate: Callable[[Utterance], str | None] | None = None,
+        gate: Callable[[Utterance], Verdict] | None = None,
         max_utterance_s: float | None = None,
     ):
         self._db = db
@@ -62,9 +63,10 @@ class ConversationMatcher:
         return self._open
 
     def on_utterance(self, utterance: Utterance) -> None:
-        if utterance.speaker == "other" and self._gate is not None and (reason := self._gate(utterance)):
-            log.info("background speech (%s): %r", reason, utterance.text)
-            self._publish_transcript(utterance, "background", None, reason)
+        verdict = self._gate(utterance) if utterance.speaker == "other" and self._gate is not None else Verdict()
+        if verdict.reason:
+            log.info("background speech (%s): %r", verdict.reason, utterance.text)
+            self._publish_transcript(utterance, "background", None, verdict.reason)
             return
         midpoint = (utterance.start + utterance.end) / 2
         self._apply_handoff(midpoint)
@@ -76,8 +78,9 @@ class ConversationMatcher:
 
         face_id = None
         if utterance.speaker == "other":
-            # The face in focus for most of the line (1-per-second samples), else the conversation's face.
-            face_id = self._db.majority_face(utterance.start, utterance.end) or conv.face_id
+            # Whose lips moved while it was said; else the face in focus for most of the line; else the
+            # conversation's face.
+            face_id = verdict.face_id or self._db.majority_face(utterance.start, utterance.end) or conv.face_id
         self._db.insert_segment(
             conv.conv_id, utterance.start, utterance.end, utterance.text, utterance.speaker, face_id
         )

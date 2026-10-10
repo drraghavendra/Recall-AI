@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS faces (
 CREATE TABLE IF NOT EXISTS face_portraits (
     face_id TEXT PRIMARY KEY REFERENCES faces(face_id) ON DELETE CASCADE,
     image BLOB NOT NULL,
-    saved_at REAL NOT NULL
+    saved_at REAL NOT NULL,
+    score REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS face_samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +73,8 @@ class Database:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
         self._migrate_flat_personas()
+        if "score" not in {row["name"] for row in self._conn.execute("PRAGMA table_info(face_portraits)")}:
+            self._execute("ALTER TABLE face_portraits ADD COLUMN score REAL NOT NULL DEFAULT 0")
 
     def _migrate_flat_personas(self) -> None:
         """Earlier builds kept flat personas in a `personas` table; carry them into `profiles` once."""
@@ -117,11 +120,19 @@ class Database:
         numbers = [int(match.group(1)) for row in rows if (match := re.fullmatch(r"person_(\d+)", row["face_id"]))]
         return f"person_{max(numbers, default=0) + 1:03d}"
 
-    def save_face_portrait(self, face_id: str, image: bytes) -> None:
+    def save_face_portrait(self, face_id: str, image: bytes, score: float = 0.0) -> None:
+        """Save the person's photo, replacing the current one."""
         self._execute(
-            "INSERT OR IGNORE INTO face_portraits(face_id, image, saved_at) VALUES (?, ?, ?)",
-            (face_id, image, time.time()),
+            "INSERT INTO face_portraits(face_id, image, saved_at, score) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(face_id) DO UPDATE SET image = excluded.image, saved_at = excluded.saved_at, "
+            "score = excluded.score",
+            (face_id, image, time.time(), score),
         )
+
+    def portrait_info(self, face_id: str) -> tuple[float, float] | None:
+        """(score, saved_at) of the person's photo, or None if there isn't one."""
+        row = self._conn.execute("SELECT score, saved_at FROM face_portraits WHERE face_id = ?", (face_id,)).fetchone()
+        return None if row is None else (row["score"], row["saved_at"])
 
     def get_face_portrait(self, face_id: str) -> bytes | None:
         row = self._conn.execute("SELECT image FROM face_portraits WHERE face_id = ?", (face_id,)).fetchone()

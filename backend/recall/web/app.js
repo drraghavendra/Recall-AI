@@ -239,13 +239,15 @@
     body.append(groups);
   }
 
-  function setCardPhoto(faceId) {
+  // The server keeps the best photo it has seen and bumps the URL's version when it replaces it.
+  function setCardPhoto(faceId, url = `/faces/${encodeURIComponent(faceId)}/portrait`) {
     const card = cards.get(faceId);
-    if (!card || card.hasPhoto) return;
+    if (!card || card.photoUrl === url) return;
+    card.photoUrl = url;
     const image = card.el.querySelector("img");
     image.onload = () => { image.hidden = false; card.hasPhoto = true; card.el.querySelector(".forget-button").hidden = false; };
-    image.onerror = () => { image.hidden = true; };
-    image.src = `/faces/${encodeURIComponent(faceId)}/portrait?v=${Date.now()}`;
+    image.onerror = () => { if (!card.hasPhoto) image.hidden = true; };
+    image.src = url;
   }
 
   function buildCard(faceId) {
@@ -440,7 +442,7 @@
       present = new Set(event.present || []);
       focusedId = event.focused || null;
       for (const faceId of present) void admit(faceId);
-      if (event.face_id && event.face_id === focusedId && event.portrait_url) setCardPhoto(focusedId);
+      if (event.face_id && event.portrait_url) setCardPhoto(event.face_id, event.portrait_url);
       updateCards();
       if (focusedId !== previousFocus) appendLog(focusedId ? `${personName(focusedId)} is here` : "Looking for a familiar face");
     } else if (event.type === "providers_changed") {
@@ -610,6 +612,7 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       $("consent").checked = false;
       card.hasPhoto = false;
+      card.photoUrl = null;
       const image = card.el.querySelector("img");
       image.hidden = true;
       image.removeAttribute("src");

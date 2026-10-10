@@ -12,7 +12,13 @@ from recall.face.recognizer import FaceBox, FaceHit, SearchResult
 
 
 class InsightFaceRecognizer:
-    """Detect the largest face and match normalized embeddings in a local SQLite collection."""
+    """Detect faces and match normalized embeddings against a local SQLite gallery.
+
+    Each person keeps up to `gallery_size` embeddings: the enrolment one plus confident-but-imperfect
+    matches (a new angle or light), so later sightings from those angles still match. Faces smaller
+    than `min_enroll_face_height` (fraction of frame height) are matched but never enrolled: distant
+    background faces gave poor embeddings and created stray people.
+    """
 
     def __init__(
         self,
@@ -21,6 +27,9 @@ class InsightFaceRecognizer:
         new_face_threshold: float = 0.35,
         min_det_score: float = 0.6,
         face_app=None,
+        min_enroll_face_height: float = 0.15,
+        gallery_size: int = 5,
+        gallery_add_below: float = 0.72,
     ):
         if not 0.0 <= match_threshold <= 1.0:
             raise ValueError("InsightFace match threshold must be between 0 and 1")
@@ -28,6 +37,9 @@ class InsightFaceRecognizer:
         self._match_threshold = match_threshold
         self._new_face_threshold = min(new_face_threshold, match_threshold)
         self._min_det_score = min_det_score
+        self._min_enroll_face_height = min_enroll_face_height
+        self._gallery_size = gallery_size
+        self._gallery_add_below = gallery_add_below
         self._lock = RLock()
         if face_app is None:
             try:
@@ -44,9 +56,20 @@ class InsightFaceRecognizer:
         with closing(self._connect()) as conn:
             with conn:
                 conn.execute(
-                    "CREATE TABLE IF NOT EXISTS face_embeddings ("
-                    "face_id TEXT PRIMARY KEY, embedding BLOB NOT NULL, enrolled_at REAL NOT NULL)"
+                    "CREATE TABLE IF NOT EXISTS face_gallery ("
+                    "face_id TEXT NOT NULL, embedding BLOB NOT NULL, added_at REAL NOT NULL)"
                 )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_gallery_face ON face_gallery(face_id)")
+                # Earlier builds kept one embedding per person in face_embeddings.
+                old = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'face_embeddings'"
+                ).fetchone()
+                if old:
+                    conn.execute(
+                        "INSERT INTO face_gallery (face_id, embedding, added_at) "
+                        "SELECT face_id, embedding, enrolled_at FROM face_embeddings"
+                    )
+                    conn.execute("DROP TABLE face_embeddings")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path, timeout=10)
@@ -102,7 +125,7 @@ class InsightFaceRecognizer:
 
     def _saved_embeddings(self) -> list[tuple[str, np.ndarray]]:
         with self._lock, closing(self._connect()) as conn:
-            rows = conn.execute("SELECT face_id, embedding FROM face_embeddings").fetchall()
+            rows = conn.execute("SELECT face_id, embedding FROM face_gallery").fetchall()
         return [(face_id, np.frombuffer(raw, dtype=np.float32)) for face_id, raw in rows]
 
     def _match(self, embedding: np.ndarray | None, saved: list[tuple[str, np.ndarray]]) -> SearchResult:
@@ -122,53 +145,71 @@ class InsightFaceRecognizer:
             return SearchResult(face_found=False, face_id=None, similarity=best_score)
         return SearchResult(face_found=True, face_id=None, similarity=max(0.0, best_score))
 
+    def _add_to_gallery(self, face_id: str, embedding: np.ndarray) -> None:
+        with self._lock, closing(self._connect()) as conn:
+            with conn:
+                count = conn.execute("SELECT COUNT(*) FROM face_gallery WHERE face_id = ?", (face_id,)).fetchone()[0]
+                if count < self._gallery_size:
+                    conn.execute(
+                        "INSERT INTO face_gallery (face_id, embedding, added_at) VALUES (?, ?, ?)",
+                        (face_id, embedding.tobytes(), time.time()),
+                    )
+
+    def _learn(self, result: SearchResult, box: FaceBox, embedding: np.ndarray | None) -> None:
+        """A clear, confident match that still looks somewhat different: keep it as another view of them."""
+        if (
+            embedding is not None
+            and result.face_id
+            and self._match_threshold <= result.similarity < self._gallery_add_below
+            and box[3] >= self._min_enroll_face_height
+        ):
+            self._add_to_gallery(result.face_id, embedding)
+
     def search(self, image: bytes) -> SearchResult:
-        return self._match(self._embedding(image), self._saved_embeddings())
+        hits = self.search_all(image)
+        return hits[0].result if hits else SearchResult(face_found=False, face_id=None, similarity=0.0)
 
     def search_all(self, image: bytes) -> list[FaceHit]:
         faces = self._faces(image)
         saved = self._saved_embeddings() if faces else []
-        return [FaceHit(self._match(embedding, saved), box) for box, embedding in faces]
+        hits = []
+        for box, embedding in faces:
+            result = self._match(embedding, saved)
+            self._learn(result, box, embedding)
+            hits.append(FaceHit(result, box))
+        return hits
 
-    def mouth_landmarks(
-        self, image_bytes: bytes, near: tuple[float, float] | None = None
-    ) -> tuple[np.ndarray, tuple[float, float]] | None:
-        """For lip frames: detection plus the 68-point landmark model only (no recognition).
-
-        Picks the largest face, except that among faces nearly as large it sticks with the one closest
-        to `near` (the previous frame's face centre), so two similar-sized faces don't alternate.
-        Returns the landmarks and the chosen face's centre.
-        """
+    def mouth_landmarks_all(self, image_bytes: bytes, min_height: float = 0.06) -> list[tuple[FaceBox, np.ndarray]]:
+        """For lip frames: every usable face's box and 68 landmarks (detection + landmarks only, no recognition)."""
         image = self._decode(image_bytes)
         if image is None:
-            return None
+            return []
+        height, width = image.shape[:2]
         bboxes, kpss = self._face_app.det_model.detect(image, max_num=0, metric="default")
-        if bboxes is None or len(bboxes) == 0:
-            return None
-        areas = [self._area(box) for box in bboxes]
-        candidates = [i for i in range(len(bboxes)) if areas[i] >= 0.7 * max(areas)]
-        centre = lambda i: (float(bboxes[i][0] + bboxes[i][2]) / 2, float(bboxes[i][1] + bboxes[i][3]) / 2)
-        if near is None:
-            largest = max(candidates, key=lambda i: areas[i])
-        else:
-            largest = min(candidates, key=lambda i: (centre(i)[0] - near[0]) ** 2 + (centre(i)[1] - near[1]) ** 2)
-        if float(bboxes[largest][4]) < self._min_det_score:
-            return None
+        if bboxes is None:
+            return []
         from insightface.app.common import Face
 
-        face = Face(bbox=bboxes[largest][:4], kps=None if kpss is None else kpss[largest], det_score=bboxes[largest][4])
-        self._face_app.models["landmark_3d_68"].get(image, face)
-        return face.landmark_3d_68, centre(largest)
+        found = []
+        for i, bbox in enumerate(bboxes):
+            x0, y0, x1, y1, score = (float(v) for v in bbox[:5])
+            box = (x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height)
+            if score < self._min_det_score or box[3] < min_height:
+                continue
+            face = Face(bbox=bbox[:4], kps=None if kpss is None else kpss[i], det_score=score)
+            self._face_app.models["landmark_3d_68"].get(image, face)
+            found.append((box, face.landmark_3d_68))
+        return found
 
     def enroll(self, image: bytes, face_id: str) -> str | None:
-        embedding = self._embedding(image)
-        if embedding is None:
+        faces = self._faces(image)
+        if not faces:
+            return None
+        box, embedding = faces[0]
+        if embedding is None or box[3] < self._min_enroll_face_height:
             return None
         with self._lock, closing(self._connect()) as conn:
             with conn:
-                conn.execute(
-                    "INSERT INTO face_embeddings(face_id, embedding, enrolled_at) VALUES (?, ?, ?) "
-                    "ON CONFLICT(face_id) DO UPDATE SET embedding=excluded.embedding, enrolled_at=excluded.enrolled_at",
-                    (face_id, embedding.tobytes(), time.time()),
-                )
+                conn.execute("DELETE FROM face_gallery WHERE face_id = ?", (face_id,))
+        self._add_to_gallery(face_id, embedding)
         return face_id

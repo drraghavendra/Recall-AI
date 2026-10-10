@@ -6,7 +6,7 @@ from recall.audio.types import Utterance
 from recall.db import Database
 from recall.face.lips import LipActivityTracker, mouth_openness
 from recall.face.tracker import FocusedFaceTracker
-from recall.matching.attribution import AttributionGate
+from recall.matching.attribution import AttributionGate, Verdict
 from recall.matching.matcher import ConversationMatcher
 
 RATE = 16000
@@ -35,9 +35,9 @@ def lips() -> LipActivityTracker:
     return LipActivityTracker(min_openness_std=0.03)
 
 
-def feed(tracker, start, gaps):
+def feed(tracker, start, gaps, face_id="alice"):
     for i, gap in enumerate(gaps):
-        tracker.observe(start + i * 0.2, mouth_openness(face_with_mouth_open(gap)))
+        tracker.observe(face_id, start + i * 0.2, mouth_openness(face_with_mouth_open(gap)))
 
 
 def test_openness_is_inner_lip_gap_over_mouth_width():
@@ -62,11 +62,28 @@ def test_lip_check_abstains_without_enough_frames():
     assert tracker.talking_during(30.0, 32.0) is None
 
 
+def test_with_two_faces_the_line_goes_to_the_one_whose_mouth_moved():
+    tracker = lips()
+    feed(tracker, 0.0, [2, 2.2, 2, 2.1, 2, 2.3, 2, 2.1], face_id="alice")  # listening
+    feed(tracker, 0.0, [2, 12, 4, 14, 1, 10, 3, 12], face_id="bob")  # talking
+    assert tracker.speaker_during(0.2, 1.4) == ("bob", True)
+    gate = AttributionGate(min_level_dbfs=None, lips=tracker)
+    assert gate(Utterance(0.2, 1.4, "hi", "other")) == Verdict(face_id="bob")
+
+
+def test_lip_frame_faces_are_matched_to_recognised_people_by_position():
+    from recall.face.lips import _match_faces
+
+    detected = [((0.60, 0.30, 0.10, 0.20), "right-face"), ((0.10, 0.30, 0.10, 0.20), "left-face")]
+    known = {"alice": (0.11, 0.31, 0.10, 0.20), "bob": (0.59, 0.29, 0.10, 0.20), "carol": (0.9, 0.9, 0.05, 0.05)}
+    assert sorted(_match_faces(detected, known)) == [("alice", "left-face"), ("bob", "right-face")]
+
+
 def test_gate_rejects_quiet_speech_and_allows_unknown_levels():
     gate = AttributionGate(min_level_dbfs=-42.0, lips=None)
-    assert gate(Utterance(0, 2, "hi", "other", level_dbfs=-55.0)) == "too_quiet"
-    assert gate(Utterance(0, 2, "hi", "other", level_dbfs=-30.0)) is None
-    assert gate(Utterance(0, 2, "hi", "other")) is None
+    assert gate(Utterance(0, 2, "hi", "other", level_dbfs=-55.0)) == Verdict(reason="too_quiet")
+    assert gate(Utterance(0, 2, "hi", "other", level_dbfs=-30.0)) == Verdict()
+    assert gate(Utterance(0, 2, "hi", "other")) == Verdict()
 
 
 @pytest.fixture

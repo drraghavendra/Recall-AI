@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 
 from recall.audio.types import Utterance
 from recall.face.lips import LipActivityTracker
@@ -6,24 +7,35 @@ from recall.face.lips import LipActivityTracker
 log = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class Verdict:
+    """Why an utterance is background (`reason`), or which face's lips say spoke it (`face_id`), if known."""
+
+    reason: str | None = None
+    face_id: str | None = None
+
+
 class AttributionGate:
-    """Decides whether someone else's utterance can belong to the face in focus.
+    """Decides who, if anyone in view, said someone else's utterance.
 
     Two checks, each skipped when it has no data: speech quieter than `min_level_dbfs` is someone
-    further away, and speech during which the focused face's mouth did not move is someone else.
-    Returns the rejection reason, or None if the utterance may be attributed.
+    further away; and when we watched mouths during the utterance, it belongs to the face whose mouth
+    moved most, or to no one in view (background) if none did.
     """
 
     def __init__(self, min_level_dbfs: float | None, lips: LipActivityTracker | None):
         self._min_level_dbfs = min_level_dbfs
         self._lips = lips
 
-    def __call__(self, utterance: Utterance) -> str | None:
+    def __call__(self, utterance: Utterance) -> Verdict:
         level = utterance.level_dbfs
         if level is not None:
             log.info("utterance %.1f-%.1fs level %.1f dBFS", utterance.start, utterance.end, level)
         if self._min_level_dbfs is not None and level is not None and level < self._min_level_dbfs:
-            return "too_quiet"
-        if self._lips is not None and self._lips.talking_during(utterance.start, utterance.end) is False:
-            return "lips_still"
-        return None
+            return Verdict(reason="too_quiet")
+        if self._lips is None:
+            return Verdict()
+        speaker, decided = self._lips.speaker_during(utterance.start, utterance.end)
+        if decided and speaker is None:
+            return Verdict(reason="lips_still")
+        return Verdict(face_id=speaker)
