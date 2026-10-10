@@ -12,8 +12,12 @@ def _parse_args() -> argparse.Namespace:
 
     run = commands.add_parser("run", help="capture camera + mic and show personas (default)")
     run.add_argument("--camera", type=int, default=defaults.camera_index)
-    run.add_argument("--window", type=float, default=defaults.window_s, help="sampling window seconds")
-    run.add_argument("--frames", type=int, default=defaults.frames_per_window, help="frames per window (5-10)")
+    run.add_argument(
+        "--window", type=float, default=defaults.window_s, help=f"seconds per sampling window (default {defaults.window_s:g})"
+    )
+    run.add_argument(
+        "--frames", type=int, default=defaults.frames_per_window, help=f"frames per window (default {defaults.frames_per_window})"
+    )
     run.add_argument("--persona-ttl", type=float, default=defaults.persona_ttl_s, help="persona cache TTL seconds")
 
     enroll = commands.add_parser("enroll-voice", help="record your voice and enroll it as 'self'")

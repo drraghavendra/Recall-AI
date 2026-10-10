@@ -20,7 +20,7 @@ Start the backend first, then:
 
 ```bash
 .venv/bin/python -m recall_client run                         # localhost:8000
-.venv/bin/python -m recall_client --server http://10.0.0.5:8000 run --frames 8 --window 2
+.venv/bin/python -m recall_client --server http://10.0.0.5:8000 run --window 2 --frames 6
 ```
 
 `--server` goes *before* the subcommand. **q** or **Esc** in the video window quits.
@@ -33,7 +33,7 @@ One-time: enroll your own voice, so your words stay out of other people's person
 
 ## What it does
 
-- **Camera:** every `--window` seconds (default 2), grabs `--frames` (default 6) frames spread
+- **Camera:** every `--window` seconds (default 5), grabs `--frames` (default 1) frames spread
   across the window, downsizes them to 640px JPEGs, and sends one `frames` message.
 - **Mic:** 16 kHz mono s16le in 100ms blocks, sent continuously. Timestamps are anchored by
   sample count so chunks stay gapless (re-anchored after an input overflow).
