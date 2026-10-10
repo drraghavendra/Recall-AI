@@ -39,7 +39,7 @@
 
   const personName = (faceId) => {
     const match = /^person_(\d+)$/i.exec(faceId || "");
-    return match ? `Person ${Number(match[1])}` : faceId ? `Person ${faceId.slice(0, 8)}` : "No one in focus";
+    return match ? `Person ${Number(match[1])}` : faceId ? `Person ${faceId.slice(0, 8)}` : "No one yet";
   };
 
   function setStatus(text, kind = "") {
@@ -157,7 +157,7 @@
 
   async function fetchPersona(faceId) {
     const request = ++portraitRequest;
-    $("memory-state").textContent = "RECALLING";
+    $("memory-state").textContent = "Remembering…";
     try {
       const response = await fetch(`/persona/${encodeURIComponent(faceId)}`);
       if (request !== portraitRequest || faceId !== currentFaceId) return;
@@ -166,18 +166,18 @@
         root.replaceChildren();
         const first = document.createElement("p");
         first.className = "first-meeting";
-        first.textContent = "A new face. A new memory starts here.";
+        first.textContent = "Meeting for the first time.";
         root.append(first);
-        $("memory-state").textContent = "NEW MEMORY";
+        $("memory-state").textContent = "First meeting";
         return;
       }
       if (!response.ok) throw new Error(`Memory request returned ${response.status}`);
       renderPersona(await response.json());
-      $("memory-state").textContent = "ON FILE";
+      $("memory-state").textContent = "";
     } catch (error) {
       if (request === portraitRequest) {
-        $("persona").textContent = `Could not load memories: ${error.message}`;
-        $("memory-state").textContent = "OFFLINE";
+        $("persona").textContent = "Couldn’t remember right now.";
+        $("memory-state").textContent = "Unavailable";
       }
     }
   }
@@ -205,7 +205,7 @@
   }
 
   function personaLine(persona) {
-    if (!persona) return "First meeting · no memory yet";
+    if (!persona) return "Meeting for the first time";
     return persona.summary || (persona.key_facts || [])[0] || "No saved details yet.";
   }
 
@@ -260,7 +260,7 @@
       }
     }
     $("others").hidden = others.size === 0;
-    $("others-count").textContent = `${others.size} ${others.size === 1 ? "PERSON" : "PEOPLE"}`;
+    $("others-count").textContent = `${others.size} ${others.size === 1 ? "person" : "people"}`;
   }
 
   function showPortrait(url) {
@@ -270,13 +270,13 @@
     image.onload = () => {
       image.hidden = false;
       $("portrait-placeholder").classList.add("hidden");
-      $("portrait-state").textContent = "FRAME SAVED · LOCAL";
+      $("portrait-state").textContent = "";
       $("forget-portrait").disabled = false;
     };
     image.onerror = () => {
       image.hidden = true;
       $("portrait-placeholder").classList.remove("hidden");
-      $("portrait-state").textContent = "NO SAVED FRAME";
+      $("portrait-state").textContent = "";
       $("forget-portrait").disabled = true;
       lastPortraitUrl = null;
     };
@@ -287,18 +287,18 @@
     currentFaceId = null;
     lastPortraitUrl = null;
     portraitRequest += 1;
-    $("face-name").textContent = "No one in focus";
-    $("face-id").textContent = "ID —";
-    $("confidence").textContent = "—";
-    $("match-status").textContent = "WAITING";
+    $("face-name").textContent = "No one yet";
+    $("face-id").textContent = "";
+    $("confidence").textContent = "";
+    $("match-status").textContent = "Waiting";
     $("match-status").classList.remove("recognized");
     $("portrait").hidden = true;
     $("portrait").removeAttribute("src");
     $("portrait-placeholder").classList.remove("hidden");
-    $("portrait-state").textContent = "NO SAVED FRAME";
+    $("portrait-state").textContent = "";
     $("forget-portrait").disabled = true;
-    $("persona").textContent = "No one is in focus right now.";
-    $("memory-state").textContent = "READY";
+    $("persona").textContent = "No one is with you right now.";
+    $("memory-state").textContent = "";
   }
 
   function addTranscript(event) {
@@ -309,7 +309,7 @@
     line.className = `transcript-line ${event.speaker === "self" ? "self" : background ? "background" : "other"}`;
     const speaker = document.createElement("span");
     speaker.className = `transcript-speaker ${event.speaker === "self" ? "self" : background ? "background" : ""}`;
-    speaker.textContent = event.speaker === "self" ? "YOU" : background ? "NEARBY" : personName(event.face_id);
+    speaker.textContent = event.speaker === "self" ? "You" : background ? "Nearby" : personName(event.face_id);
     if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus" : "The person in focus wasn’t moving their lips";
     const text = document.createElement("span");
     text.className = "transcript-text";
@@ -319,9 +319,9 @@
     while (root.querySelectorAll(".transcript-line").length > 24) root.querySelector(".transcript-line")?.remove();
     root.scrollTop = root.scrollHeight;
     transcriptCount += 1;
-    $("transcript-count").textContent = `${transcriptCount} ${transcriptCount === 1 ? "LINE" : "LINES"}`;
+    $("transcript-count").textContent = `${transcriptCount} ${transcriptCount === 1 ? "line" : "lines"}`;
     if (background) return;
-    showToast(event.speaker === "self" ? `You said · “${event.text}”` : `${personName(event.face_id)} · “${event.text}”`);
+    showToast(event.speaker === "self" ? `You: “${event.text}”` : `${personName(event.face_id)}: “${event.text}”`);
   }
 
   const PROVIDER_SELECTS = { "face-backend": "face_backend", "stt-backend": "stt_backend" };
@@ -334,7 +334,8 @@
       $(id).disabled = false;
     }
     if (state.stt_backend) {
-      $("stt-provider").textContent = state.stt_backend === "sarvam" ? "TRANSCRIBED BY SARVAM API" : `TRANSCRIBED LOCALLY · ${state.stt_backend.toUpperCase()}`;
+      // Sarvam is a cloud service, so don't claim the words stay on this computer when it's in use.
+      $("stt-provider").textContent = state.stt_backend === "sarvam" ? "Written down using Sarvam (online)" : "Written down on this computer";
     }
   }
 
@@ -370,27 +371,27 @@
         if (currentFaceId) {
           const name = personName(currentFaceId);
           $("face-name").textContent = name;
-          $("face-id").textContent = `ID ${currentFaceId}`;
-          $("match-status").textContent = event.is_new ? "NEW PERSON" : "RECOGNIZED";
+          $("face-id").textContent = "";
+          $("match-status").textContent = event.is_new ? "New friend" : "Recognized";
           $("match-status").classList.add("recognized");
-          $("confidence").textContent = `${Math.round(event.confidence * 100)}% match`;
-          $("persona").textContent = "Looking for your saved memories…";
-          $("memory-state").textContent = "RECALLING";
+          $("confidence").textContent = "";
+          $("persona").textContent = "Remembering…";
+          $("memory-state").textContent = "Remembering…";
           $("portrait").hidden = true;
           $("portrait-placeholder").classList.remove("hidden");
-          $("portrait-state").textContent = "CHECKING LOCAL MEMORY";
+          $("portrait-state").textContent = "";
           $("forget-portrait").disabled = true;
           void fetchPersona(currentFaceId);
-          showToast(event.is_new ? `${name} · new memory started` : `${name} · recognized`);
+          showToast(event.is_new ? `Meeting ${name}` : `This is ${name}`);
         } else {
           clearIdentity();
         }
       } else if (event.face_id) {
-        $("confidence").textContent = `${Math.round(event.confidence * 100)}% match`;
+        $("confidence").textContent = "";
       }
       if (event.face_id) showPortrait(event.portrait_url);
       renderOthers(event.others);
-      appendLog(event.face_id ? `${personName(event.face_id)} recognized` : "No face currently in focus");
+      appendLog(event.face_id ? `${personName(event.face_id)} is here` : "Looking for a familiar face");
     } else if (event.type === "providers_changed") {
       showProviders(event);
     } else if (event.type === "transcript") {
@@ -399,14 +400,14 @@
       if (others.has(event.face_id)) updateOther(event.face_id, event.persona);
       if (event.face_id === currentFaceId) {
         renderPersona(event.persona);
-        $("memory-state").textContent = "JUST UPDATED";
+        $("memory-state").textContent = "Just updated";
       }
-      appendLog("Memory snapshot updated");
+      appendLog("Remembered something new");
     } else if (event.type === "conversation_started") {
-      $("talking").innerHTML = "<i></i> SPEAKING";
+      $("talking").innerHTML = "<i></i> Talking";
       $("talking").classList.add("active");
     } else if (event.type === "conversation_ended") {
-      $("talking").innerHTML = "<i></i> IDLE";
+      $("talking").innerHTML = "<i></i> Quiet";
       $("talking").classList.remove("active");
     }
   }
@@ -414,7 +415,7 @@
   async function beginCapture() {
     if (!$("consent").checked) return;
     $("start").disabled = true;
-    setStatus("CONNECTING", "");
+    setStatus("Starting…", "");
     try {
       media = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
@@ -428,10 +429,10 @@
 
       socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
       socket.onmessage = (message) => {
-        try { handleEvent(JSON.parse(message.data)); } catch (error) { appendLog(`Could not read backend event: ${error.message}`); }
+        try { handleEvent(JSON.parse(message.data)); } catch (error) { appendLog("Something went wrong; still listening"); }
       };
-      socket.onclose = () => setStatus("DISCONNECTED", "error");
-      socket.onerror = () => setStatus("CONNECTION ERROR", "error");
+      socket.onclose = () => setStatus("Stopped", "error");
+      socket.onerror = () => setStatus("Can’t connect", "error");
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error("Backend connection timed out.")), 8000);
         socket.addEventListener("open", () => { clearTimeout(timeout); resolve(); }, { once: true });
@@ -455,8 +456,8 @@
       frameTimer = setInterval(sendFrame, FRAME_PERIOD_MS);
       $("stop").disabled = false;
       $("voice").disabled = false;
-      setStatus("CONNECTED", "live");
-      appendLog("Live view connected · portrait saving enabled");
+      setStatus("On", "live");
+      appendLog("Camera is on");
     } catch (error) {
       setStatus(error.message || "Could not start capture", "error");
       await stopCapture(false);
@@ -475,7 +476,7 @@
       clearTimeout(voiceTimer);
       voiceTimer = null;
       voiceParts = null;
-      $("voice").textContent = "Enroll my voice · 10 sec";
+      $("voice").textContent = "Learn my voice";
     }
     if (processor) processor.disconnect();
     if (source) source.disconnect();
@@ -493,8 +494,8 @@
     $("voice").disabled = true;
     $("start").disabled = !$("consent").checked;
     if (updateStatus) {
-      setStatus("STANDBY");
-      appendLog("Capture stopped · saved portrait remains on backend");
+      setStatus("Not started");
+      appendLog("Camera is off");
     }
   }
 
@@ -502,8 +503,8 @@
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     voiceParts = [];
     $("voice").disabled = true;
-    $("voice").textContent = "Recording… 10 sec";
-    appendLog("Speak naturally for 10 seconds to enroll your own voice");
+    $("voice").textContent = "Listening… keep talking";
+    appendLog("Talk normally for about 10 seconds");
     voiceTimer = setTimeout(async () => {
       voiceTimer = null;
       const total = voiceParts.reduce((sum, part) => sum + part.length, 0);
@@ -511,13 +512,13 @@
       let offset = 0;
       for (const part of voiceParts) { audio.set(part, offset); offset += part.length; }
       voiceParts = null;
-      $("voice").textContent = "Enroll my voice · 10 sec";
+      $("voice").textContent = "Learn my voice";
       try {
         const response = await fetch("/self-voice", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: audio });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-        appendLog("Voice profile saved");
+        appendLog("Got it, I know your voice now");
       } catch (error) {
-        appendLog(`Voice enrollment failed: ${error.message}`);
+        appendLog("Couldn’t learn your voice, please try again");
       } finally {
         $("voice").disabled = !socket || socket.readyState !== WebSocket.OPEN;
       }
@@ -526,7 +527,7 @@
 
   async function forgetPortrait() {
     if (!currentFaceId || !lastPortraitUrl) return;
-    if (!window.confirm(`Forget the saved portrait for ${personName(currentFaceId)}?`)) return;
+    if (!window.confirm(`Forget the photo of ${personName(currentFaceId)}?`)) return;
     try {
       const response = await fetch(`/faces/${encodeURIComponent(currentFaceId)}/portrait`, { method: "DELETE" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -535,11 +536,11 @@
       $("portrait").hidden = true;
       $("portrait").removeAttribute("src");
       $("portrait-placeholder").classList.remove("hidden");
-      $("portrait-state").textContent = "FRAME FORGOTTEN";
+      $("portrait-state").textContent = "";
       $("forget-portrait").disabled = true;
-      appendLog(`Saved image for ${personName(currentFaceId)} removed · saving paused`);
+      appendLog(`Photo of ${personName(currentFaceId)} forgotten`);
     } catch (error) {
-      appendLog(`Could not remove portrait: ${error.message}`);
+      appendLog("Couldn’t forget that photo, please try again");
     }
   }
 
@@ -556,4 +557,4 @@
     appendLog("Could not read the active face and speech modules.");
   });
   fetch("/health").then((response) => response.json()).then((health) => { lipCheck = Boolean(health.lip_check); }).catch(() => {});
-})();
+  })();
