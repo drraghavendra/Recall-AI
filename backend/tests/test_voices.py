@@ -81,3 +81,13 @@ def test_gate_rejects_unknown_voice_and_learns_accepted_ones():
         assert gate(Utterance(0, 2, "hi", "other", voice=said_by(ALICE))) == Verdict(face_id="alice")
     assert gate(Utterance(0, 2, "hey", "other", voice=said_by(STRANGER))) == Verdict(reason="voice_unknown")
     assert gate(Utterance(0, 2, "me again", "other", voice=said_by(ALICE))) == Verdict(face_id="alice")
+
+
+def test_a_voice_matching_someone_who_has_left_stays_with_the_face_in_view():
+    # person_001's voiceprint learnt the wearer's voice while they were in focus; then the wearer turns
+    # the camera to themselves (person_002). Their lines must not go to person_001, who isn't there.
+    voices = book()
+    teach(voices, "person_001", ALICE)
+    assert voices.judge("person_002", said_by(ALICE), 2.0, in_view={"person_002"}).face_id == "person_002"
+    # While both are in view, a clear match still goes to the right one.
+    assert voices.judge("person_002", said_by(ALICE), 2.0, in_view={"person_001", "person_002"}).face_id == "person_001"

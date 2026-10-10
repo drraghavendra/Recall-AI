@@ -36,12 +36,14 @@ class AttributionGate:
         lips_pick_speaker: bool = False,
         focused_during: Callable[[float, float], str | None] | None = None,
         voices: VoiceBook | None = None,
+        in_view: Callable[[], set[str]] | None = None,
     ):
         self._min_level_dbfs = min_level_dbfs
         self._lips = lips
         self._lips_pick_speaker = lips_pick_speaker
         self._focused_during = focused_during
         self._voices = voices
+        self._in_view = in_view
 
     def __call__(self, utterance: Utterance) -> Verdict:
         level = utterance.level_dbfs
@@ -54,7 +56,7 @@ class AttributionGate:
             return verdict
         focused = verdict.face_id or (self._focused_during(utterance.start, utterance.end) if self._focused_during else None)
         seconds = utterance.end - utterance.start
-        judgement = self._voices.judge(focused, utterance.voice, seconds)
+        judgement = self._voices.judge(focused, utterance.voice, seconds, self._in_view() if self._in_view else None)
         if judgement.background:
             return Verdict(reason="voice_unknown")
         if judgement.face_id and utterance.voice is not None:

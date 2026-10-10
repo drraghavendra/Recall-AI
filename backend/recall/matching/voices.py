@@ -5,7 +5,9 @@ face's voiceprint is the mean of its samples that agree with each other, so the 
 that slipped in early doesn't skew it. Once a face has enough samples, a new line said while that face
 is in focus is checked against it:
 - the voice matches the focused face: theirs;
-- it clearly matches another known face better: credited to that face instead;
+- it clearly matches another known face better, and that face is in view: credited to them instead
+  (never to someone who isn't there: their voiceprint may have learnt someone else's voice early on,
+  e.g. the wearer's own before "Learn my voice");
 - it matches nobody: background (someone off camera or far away).
 Until a face has a voiceprint, its lines are accepted as before (and teach it).
 """
@@ -82,19 +84,30 @@ class VoiceBook:
         self._db.add_voice_sample(face_id, voice.tobytes(), seconds, self._keep)
         self._refresh(face_id)
 
-    def judge(self, focused: str | None, voice: np.ndarray | None, seconds: float) -> VoiceJudgement:
-        """Whose voice is this line, given who was in focus? Too short or no voiceprints: no opinion."""
-        if voice is None or seconds < self._min_seconds or not self._prints:
+    def judge(
+        self, focused: str | None, voice: np.ndarray | None, seconds: float, in_view: set[str] | None = None
+    ) -> VoiceJudgement:
+        """Whose voice is this line, given who was in focus and who else is in view (None: anyone)?
+        Too short or no voiceprints to compare: no opinion (the focused face)."""
+        if voice is None or seconds < self._min_seconds:
             return VoiceJudgement(focused)
-        scores = {face_id: float(np.dot(voice, vp)) for face_id, vp in self._prints.items()}
+        candidates = None if in_view is None else set(in_view) | ({focused} if focused else set())
+        scores = {
+            face_id: float(np.dot(voice, vp))
+            for face_id, vp in self._prints.items()
+            if candidates is None or face_id in candidates
+        }
+        if not scores:
+            return VoiceJudgement(focused)
         best, best_score = max(scores.items(), key=lambda item: item[1])
         focused_score = scores.get(focused) if focused else None
         log.info(
-            "voice check (%.1fs, focus %s): %s",
-            seconds, focused, ", ".join(f"{face} {score:.2f}" for face, score in sorted(scores.items())),
+            "voice check (%.1fs, focus %s, in view %s): %s",
+            seconds, focused, sorted(candidates) if candidates is not None else "any",
+            ", ".join(f"{face} {score:.2f}" for face, score in sorted(scores.items())),
         )
         if best != focused and best_score >= self._other and (focused_score is None or best_score > focused_score + 0.05):
-            return VoiceJudgement(best)  # clearly someone else we know
+            return VoiceJudgement(best)  # clearly someone else in view
         if focused_score is None:
             return VoiceJudgement(focused)  # no voiceprint for the face in focus yet: can't tell
         if focused_score >= self._same:

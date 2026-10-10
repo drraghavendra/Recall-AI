@@ -167,6 +167,9 @@ def build_services(settings: Settings) -> Services:
             # The focused face for most of the line, else whoever was focused when it started.
             lambda start, end: db.majority_face(start, end) or tracker.face_at(start),
             voices,
+            # Who's in view: debounced presence, plus anyone recognised in the last few seconds (the line
+            # is judged a moment after it was said).
+            lambda: presence.present | set(face.known_boxes(max_age_s=8.0)),
         ),
         max_utterance_s=settings.max_utterance_s,
         on_line=persona.line_added,
