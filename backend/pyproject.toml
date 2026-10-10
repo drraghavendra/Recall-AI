@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recall-backend"
+version = "0.1.0"
+description = "Recall-AI backend: face recognition, VAD-driven conversations, transcripts, personas"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "boto3>=1.34",
+    "anthropic>=1.13",
+]
+
+[project.optional-dependencies]
+# Local audio models — required to run the server; the core logic and tests don't import them.
+ml = [
+    "torch>=2.5",
+    "silero-vad>=5.1",
+    "faster-whisper>=1.1",
+    "resemblyzer>=0.1.4",
+]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+include = ["recall*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
