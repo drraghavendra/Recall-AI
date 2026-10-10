@@ -2,8 +2,9 @@
 
 One FastAPI process implementing [DESIGN.md](../DESIGN.md): an always-on **read path**
 (frames → faceId → persona) and a VAD-triggered **write path** (speech → conversation →
-transcript ↔ face matching → persona update). Face recognition is AWS Rekognition and the
-persona LLM is Claude; VAD, transcription and the self/other voice check run locally.
+transcript ↔ face matching → persona update). Face recognition is selected with
+`RECALL_FACE_BACKEND`: AWS Rekognition (default), local InsightFace, or Mock. The persona LLM is
+Claude; VAD, transcription and the self/other voice check run locally.
 
 ## Run
 
@@ -16,6 +17,26 @@ export AWS_PROFILE=...          # any standard boto3 credential source
 
 .venv/bin/uvicorn recall.main:app --port 8000 --workers 1
 ```
+
+Open [http://localhost:8000](http://localhost:8000) for the browser capture client. It streams
+camera frames and microphone audio over the backend's WebSocket. Browsers generally require a
+secure context for camera/microphone access; `localhost` is supported for local development.
+
+For fully local face matching, install the optional model and select it before starting the
+backend:
+
+```bash
+.venv/bin/pip install -e ".[ml,dev,local-face]"
+export RECALL_FACE_BACKEND=insightface
+export RECALL_LOCAL_FACE_DB_PATH=recall_faces.sqlite3
+.venv/bin/uvicorn recall.main:app --port 8000 --workers 1
+```
+
+InsightFace uses the local `buffalo_l` CPU model and a SQLite embedding collection. It does not
+send face images to AWS or retain the original image. The first run downloads model files.
+Use consented images only; biometric embeddings remain sensitive data. Check the model/license
+terms before commercial use. `mock` is useful for API/UI development without a camera or cloud
+face provider.
 
 `--workers 1` is required: the focused face, the open conversation and the persona locks
 are in-process state. First start downloads the Whisper and Silero models and creates the
@@ -58,7 +79,8 @@ long-lived WebSocket, in-process state and background tasks.
 | `WS /ws` | Capture client. One at a time. |
 | `GET /persona/{face_id}` | 404 = no persona yet → "You're meeting them for the first time" |
 | `POST /self-voice` | Raw 16 kHz mono s16le PCM, ≥3s |
-| `GET /health` | |
+| `GET /health` | Backend status and selected face provider. |
+| `GET /` | Browser capture client. |
 
 **Client → server** (JSON text frames):
 
@@ -83,7 +105,7 @@ a safety net.
 
 | Module | Role | Swappable behind |
 |---|---|---|
-| `face/` | Sharpest frame(s) → Rekognition search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
+| `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
 | `audio/` | Silero VAD utterances → faster-whisper text + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
 | `persona/` | Watermarked incremental updates via Claude structured output | `PersonaWriter` |
@@ -92,11 +114,10 @@ a safety net.
 
 ## Implementation notes vs. DESIGN.md
 
-- **Rekognition replaces local face models.** Only the sharpest `RECALL_FRAMES_PER_WINDOW`
-  frames (default 1) of each burst are sent, to keep cost and rate limits sane
-  (~$1 per 1,000 calls). `SearchFacesByImage` searches the largest face, which *is* the
-  focused-face heuristic. A new identity is enrolled from the first unmatched frame —
-  a blurry frame can occasionally create a duplicate identity.
+- Only the sharpest `RECALL_FRAMES_PER_WINDOW` frames (default 1) of each burst are sent to
+  Rekognition, to keep cost and rate limits sane (~$1 per 1,000 calls). Both providers search
+  the largest face, which is the focused-face heuristic. A new identity is enrolled from the
+  first unmatched frame — a blurry frame can occasionally create a duplicate identity.
 - **A conversation opens when a ≥`min_speech_duration` utterance completes**, back-dated to
   its onset, rather than mid-utterance. Same result, simpler, but the
   `conversation_started` event can lag by up to `RECALL_MAX_UTTERANCE_S` during a monologue.

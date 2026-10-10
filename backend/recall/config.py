@@ -8,8 +8,8 @@ class Settings(BaseSettings):
 
     db_path: str = "recall.db"
 
-    # Face. "mock" skips AWS entirely and reports one of mock_face_count fixed ids ("1", "2", ...).
-    face_backend: Literal["rekognition", "mock"] = "rekognition"
+    # Face provider selected by the recognizer factory. InsightFace runs locally; Rekognition uses AWS.
+    face_backend: Literal["rekognition", "insightface", "mock"] = "rekognition"
     mock_face_count: int = 3
     mock_face_hold_windows: int = 6
 
@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     rekognition_collection_id: str = "recall-ai-faces"
     face_match_threshold: float = 90.0
+    local_face_db_path: str = "recall_faces.sqlite3"
+    local_face_match_threshold: float = 0.55
     frames_per_window: int = 1
     face_confirm_windows: int = 2
     face_absent_confirm_windows: int = 3

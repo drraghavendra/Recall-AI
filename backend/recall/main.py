@@ -2,10 +2,13 @@ import asyncio
 import base64
 import binascii
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from recall.audio.pcm import pcm16_to_float
@@ -29,6 +32,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Recall-AI backend", lifespan=lifespan)
+WEB_DIR = Path(__file__).with_name("web")
+app.mount("/web-assets", StaticFiles(directory=WEB_DIR), name="web-assets")
+
+
+@app.get("/", include_in_schema=False)
+async def web_client() -> FileResponse:
+    return FileResponse(WEB_DIR / "index.html")
 
 
 def _services(holder: Request | WebSocket) -> Services:
@@ -37,7 +47,7 @@ def _services(holder: Request | WebSocket) -> Services:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "face_backend": Settings().face_backend}
 
 
 @app.get("/persona/{face_id}")

@@ -68,6 +68,11 @@ def _build_recognizer(settings: Settings) -> FaceRecognizer:
             settings.mock_face_hold_windows,
         )
         return MockRecognizer(settings.mock_face_count, settings.mock_face_hold_windows)
+    if settings.face_backend == "insightface":
+        # Import only when selected so Rekognition/mock installs do not need the ML extra.
+        from recall.face.insightface import InsightFaceRecognizer
+
+        return InsightFaceRecognizer(settings.local_face_db_path, settings.local_face_match_threshold)
     recognizer = RekognitionRecognizer(
         settings.rekognition_collection_id, settings.aws_region, settings.face_match_threshold
     )
