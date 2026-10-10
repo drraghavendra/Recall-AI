@@ -1,6 +1,8 @@
 (() => {
   const TARGET_RATE = 16000;
   const FRAME_PERIOD_MS = 1000;
+  // Webcams start dark while auto-exposure settles; frames sent right away gave black saved photos.
+  const CAMERA_WARMUP_MS = 2000;
   const AUDIO_CHUNK_SAMPLES = 1600;
   // Lip check: while the mic hears sound, send small frames at ~5 fps so the backend can tell whether
   // the person in focus is the one talking.
@@ -320,8 +322,28 @@
     $("people-count").textContent = cards.size ? (here ? `${here} here now` : "No one here now") : "No one yet";
     $("people-count").classList.toggle("recognized", here > 0);
     const waiting = [...present].filter((id) => !cards.has(id));
+    updateSpecsHud();
     $("waiting").hidden = !waiting.length;
     $("waiting").textContent = waiting.length ? `Getting to know ${waiting.map(personName).join(", ")}…` : "";
+  }
+
+  // Glasses view: frames the camera like the wearer's spectacles, with a heads-up label in the right lens.
+  function updateSpecsHud() {
+    const persona = focusedId ? personas.get(focusedId) : null;
+    $("specs-hud").classList.toggle("idle", !focusedId);
+    $("specs-name").textContent = focusedId
+      ? [personName(focusedId), persona && persona.relation && persona.relation !== "unknown" ? persona.relation : ""].filter(Boolean).join(" · ")
+      : "Looking…";
+    $("specs-line").textContent = !focusedId ? "" : !goodPersona(persona) ? "Meeting for the first time"
+      : persona.last_talked_about ? `Last time: ${persona.last_talked_about}` : persona.summary || "";
+  }
+
+  function setSpecs(on) {
+    $("specs").hidden = !on;
+    $("specs-toggle").setAttribute("aria-pressed", String(on));
+    $("specs-toggle").textContent = on ? "Glasses view: on" : "Glasses view";
+    try { localStorage.setItem("recall-specs", on ? "1" : "0"); } catch {}
+    updateSpecsHud();
   }
 
   function setListening(faceId, text, kind = "") {
@@ -440,6 +462,7 @@
       } else if (present.has(event.face_id)) {
         void admit(event.face_id);
       }
+      updateSpecsHud();
       appendLog(`Remembered something new about ${personName(event.face_id)}`);
     } else if (event.type === "conversation_started") {
       $("talking").innerHTML = "<i></i> Talking";
@@ -502,8 +525,11 @@
       audioEpoch = Date.now() / 1000;
       sentSamples = 0;
       pendingAudio = new Float32Array(0);
-      sendFrame();
-      frameTimer = setInterval(sendFrame, FRAME_PERIOD_MS);
+      frameTimer = setTimeout(() => {
+        if (!media) return;
+        sendFrame();
+        frameTimer = setInterval(sendFrame, FRAME_PERIOD_MS);
+      }, CAMERA_WARMUP_MS);
       $("stop").disabled = false;
       $("voice").disabled = false;
       setStatus("On", "live");
@@ -516,7 +542,7 @@
   }
 
   async function stopCapture(updateStatus = true) {
-    if (frameTimer) clearInterval(frameTimer);
+    if (frameTimer) { clearTimeout(frameTimer); clearInterval(frameTimer); }
     frameTimer = null;
     stopLipBurst();
     present = new Set();
@@ -599,6 +625,8 @@
   $("stop").addEventListener("click", () => void stopCapture());
   $("voice").addEventListener("click", enrollVoice);
   setInterval(updateCards, 15000);
+  $("specs-toggle").addEventListener("click", () => setSpecs($("specs").hidden));
+  try { if (localStorage.getItem("recall-specs") === "1") setSpecs(true); } catch {}
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });
 
   for (const id of Object.keys(PROVIDER_SELECTS)) $(id).addEventListener("change", (event) => void switchProvider(event.target));

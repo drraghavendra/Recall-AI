@@ -31,11 +31,43 @@
           <div class="camera-frame">
             <video id="video" autoplay playsinline muted></video>
             <div id="placeholder" class="camera-placeholder"><div class="aperture"><span></span><span></span><span></span></div><strong>Ready when you are</strong><small>Press “Start” when everyone is comfortable.</small></div>
+            <div id="specs" class="specs" hidden aria-hidden="true">
+              <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                  <mask id="specs-lenses">
+                    <rect width="1600" height="900" fill="white" />
+                    <rect x="80" y="150" width="690" height="590" rx="230" fill="black" />
+                    <rect x="830" y="150" width="690" height="590" rx="230" fill="black" />
+                  </mask>
+                  <linearGradient id="specs-glare" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#fff" stop-opacity="0" />
+                    <stop offset=".45" stop-color="#fff" stop-opacity="0" />
+                    <stop offset=".5" stop-color="#fff" stop-opacity=".16" />
+                    <stop offset=".58" stop-color="#fff" stop-opacity="0" />
+                  </linearGradient>
+                  <linearGradient id="specs-tortoise" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#6b4226" /><stop offset=".35" stop-color="#3f2617" />
+                    <stop offset=".6" stop-color="#7a4b2a" /><stop offset="1" stop-color="#3a2315" />
+                  </linearGradient>
+                </defs>
+                <rect width="1600" height="900" fill="#2a1c12" fill-opacity=".62" mask="url(#specs-lenses)" />
+                <rect x="80" y="150" width="690" height="590" rx="230" fill="url(#specs-glare)" />
+                <rect x="830" y="150" width="690" height="590" rx="230" fill="url(#specs-glare)" />
+                <g fill="none" stroke="url(#specs-tortoise)" stroke-linecap="round">
+                  <rect x="80" y="150" width="690" height="590" rx="230" stroke-width="30" />
+                  <rect x="830" y="150" width="690" height="590" rx="230" stroke-width="30" />
+                  <path d="M768 320 Q800 290 832 320" stroke-width="26" />
+                  <path d="M82 300 L0 285" stroke-width="24" />
+                  <path d="M1518 300 L1600 285" stroke-width="24" />
+                </g>
+              </svg>
+              <div id="specs-hud" class="specs-hud"><span class="specs-dot"></span><div><div id="specs-name" class="specs-name">Looking…</div><div id="specs-line" class="specs-line"></div></div></div>
+            </div>
             <div class="camera-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
             <div id="recognition-toast" class="recognition-toast" aria-live="polite"></div>
             <div class="camera-caption"><span class="live-pip"></span><span>Looking for familiar faces</span></div>
           </div>
-          <div class="controls"><button id="start" class="primary" disabled><span>▶</span> Start</button><button id="stop" class="secondary" disabled>Stop</button><button id="voice" class="tertiary" disabled>Learn my voice</button></div>
+          <div class="controls"><button id="start" class="primary" disabled><span>▶</span> Start</button><button id="stop" class="secondary" disabled>Stop</button><button id="voice" class="tertiary" disabled>Learn my voice</button><button id="specs-toggle" class="secondary specs-toggle" aria-pressed="false">Glasses view</button></div>
           <div class="capture-foot"><span id="event-log" aria-live="polite">Ready when you are.</span><span>Photos are kept on this computer.</span></div>
         </section>
 
