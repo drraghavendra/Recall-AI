@@ -35,12 +35,14 @@ class AudioPipeline:
         sample_rate: int,
         max_utterance_s: float,
         preroll_s: float = 1.0,
+        enhancer=None,
     ):
         self._vad = vad
         self._transcriber = transcriber
         self._speaker = speaker
         self._listener = listener
         self._sample_rate = sample_rate
+        self._enhancer = enhancer
         self._max_utterance = int(max_utterance_s * sample_rate)
         self._preroll = int(preroll_s * sample_rate)
         self._queue: asyncio.Queue[tuple[float, bytes] | None] = asyncio.Queue()
@@ -114,7 +116,8 @@ class AudioPipeline:
             self._listener.on_utterance(Utterance(self._ts(start), self._ts(end), text, speaker))
 
     def _analyze(self, audio: np.ndarray) -> tuple[str, Speaker]:
-        return self._transcriber.transcribe(audio), self._speaker.classify(audio)
+        transcription_audio = audio if self._enhancer is None else self._enhancer.enhance(audio, self._sample_rate)
+        return self._transcriber.transcribe(transcription_audio), self._speaker.classify(audio)
 
     def _trim(self) -> None:
         keep_from = (self._speech_start if self._speech_start is not None else self._fed) - self._preroll

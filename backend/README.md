@@ -4,7 +4,8 @@ One FastAPI process implementing [DESIGN.md](../DESIGN.md): an always-on **read 
 (frames → faceId → persona) and a VAD-triggered **write path** (speech → conversation →
 transcript ↔ face matching → persona update). Face recognition is selected with
 `RECALL_FACE_BACKEND`: AWS Rekognition (default), local InsightFace, or Mock. The persona LLM is
-Claude; VAD, transcription and the self/other voice check run locally.
+Claude. Audio uses local Silero VAD and self/other voice checks; transcription defaults to local
+Whisper, with optional Saaras v4 code-mix transcription and optional DeepFilterNet enhancement.
 
 ## Run
 
@@ -21,6 +22,58 @@ export AWS_PROFILE=...          # any standard boto3 credential source
 Open [http://localhost:8000](http://localhost:8000) for the browser capture client. It streams
 camera frames and microphone audio over the backend's WebSocket. Browsers generally require a
 secure context for camera/microphone access; `localhost` is supported for local development.
+
+### Smartphone as the capture sensor
+
+Open the client on the phone and choose **Start camera & mic**; mobile browsers are asked to use
+the rear camera, mono audio, echo cancellation, noise suppression, and automatic gain control.
+The phone sends its capture stream over Wi-Fi to the backend WebSocket, which does the processing.
+`localhost` on a phone refers to the phone itself, so a phone connecting to a laptop needs the
+laptop's LAN address and a trusted HTTPS certificate (camera/mic browser permissions are restricted
+on plain HTTP LAN origins). Run Uvicorn bound to the LAN interface with that certificate, and open
+the matching `https://<laptop-address>:8000` URL on the phone. Keep devices on a trusted network.
+
+The current face pipeline still selects and follows one focused/largest face. It does not yet track
+several identities in parallel or assign utterances by lip motion. MediaPipe face boxes alone do not
+solve identity tracking or active-speaker diarization; those need temporal face IDs, aligned audio/video
+timestamps, and evaluation on multi-speaker recordings.
+
+### Optional Saaras code-mix transcription
+
+Saaras sends each detected speech utterance to Sarvam's hosted API. Set the key in the environment
+and enable the provider (local Whisper stays the default):
+
+```powershell
+$env:SARVAM_API_KEY = "your-key"
+$env:RECALL_TRANSCRIBER_BACKEND = "sarvam"
+$env:RECALL_SARVAM_MODEL = "saaras:v4"
+$env:RECALL_SARVAM_MODE = "codemix"
+$env:RECALL_SARVAM_LANGUAGE_CODE = "unknown"
+$env:RECALL_SARVAM_KEYTERMS = '["Koramangala", "swalpa adjust maadi", "BMTC", "Indiranagar"]'
+```
+
+Restart the backend after setting these values. Keyterms are optional, limited to 50 entries and
+64 characters each, and bias recognition rather than guaranteeing a result. REST transcription is
+limited to audio files under 30 seconds; this app currently caps each utterance at 15 seconds.
+Audio is transmitted to Sarvam when this provider is selected. Do not enable it for conversations
+that must remain local.
+
+### Optional DeepFilterNet enhancement
+
+Install the enhancement extra and select it before running the server:
+
+```powershell
+python -m pip install -e ".[ml,dev,denoise]"
+$env:RECALL_SPEECH_ENHANCER = "deepfilternet"
+```
+
+On Windows, building the DeepFilterNet Python extension may require Cargo/Rust and Microsoft C++
+Build Tools. Leave `RECALL_SPEECH_ENHANCER=none` if those tools are not installed.
+
+The enhancer runs on each VAD utterance before transcription; self-voice classification continues
+to use the captured audio. It requires the DeepFilterNet model and PyTorch runtime. Noise suppression
+can help with background noise, but it does not separate overlapping speakers; evaluate it with
+recordings from the target rooms before relying on its transcripts.
 
 For fully local face matching, install the optional model and select it before starting the
 backend:

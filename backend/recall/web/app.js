@@ -270,9 +270,14 @@
     $("start").disabled = true;
     setStatus("CONNECTING", "");
     try {
+      const isPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       media = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        video: {
+          width: { ideal: isPhone ? 1920 : 1280 },
+          height: { ideal: isPhone ? 1080 : 720 },
+          facingMode: { ideal: isPhone ? "environment" : "user" },
+        },
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       video.srcObject = media;
       await video.play();
@@ -399,6 +404,9 @@
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });
 
   fetch("/health").then((response) => response.json()).then((health) => {
-    $("provider").textContent = `FACE MODULE · ${health.face_backend || "CONFIGURED"}`;
+    const transcript = health.transcriber_backend === "sarvam" ? "SAARAS CODE-MIX" : "LOCAL WHISPER";
+    const denoiser = health.speech_enhancer === "deepfilternet" ? " · DEEPFILTER" : "";
+    $("provider").textContent = `FACE · ${health.face_backend || "CONFIGURED"} · ${transcript}${denoiser}`;
+    $("transcript-mode").textContent = health.transcriber_backend === "sarvam" ? "SARVAM SAARAS · CODE-MIX" : "TRANSCRIBED LOCALLY";
   }).catch(() => { $("provider").textContent = "FACE MODULE · OFFLINE"; });
 })();

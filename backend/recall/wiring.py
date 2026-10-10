@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from recall.audio.pipeline import AudioPipeline
+from recall.audio.sarvam import SarvamTranscriber
 from recall.audio.self_voice import SelfVoiceClassifier
 from recall.audio.speaker import ResemblyzerEncoder
 from recall.audio.transcriber import FasterWhisperTranscriber
@@ -80,6 +81,26 @@ def _build_recognizer(settings: Settings) -> FaceRecognizer:
     return recognizer
 
 
+def _build_transcriber(settings: Settings):
+    if settings.transcriber_backend == "sarvam":
+        return SarvamTranscriber(
+            settings.sample_rate,
+            model=settings.sarvam_model,
+            mode=settings.sarvam_mode,
+            language_code=settings.sarvam_language_code,
+            keyterms=settings.sarvam_keyterms,
+        )
+    return FasterWhisperTranscriber(settings.whisper_model)
+
+
+def _build_enhancer(settings: Settings):
+    if settings.speech_enhancer == "deepfilternet":
+        from recall.audio.enhancer import DeepFilterNetEnhancer
+
+        return DeepFilterNetEnhancer()
+    return None
+
+
 def build_services(settings: Settings) -> Services:
     db = Database(settings.db_path)
     hub = EventHub()
@@ -114,10 +135,11 @@ def build_services(settings: Settings) -> Services:
 
     audio = AudioPipeline(
         SileroVad(settings.vad_threshold, settings.vad_min_silence_ms, settings.vad_speech_pad_ms, settings.sample_rate),
-        FasterWhisperTranscriber(settings.whisper_model),
+        _build_transcriber(settings),
         self_voice,
         matcher,
         settings.sample_rate,
         settings.max_utterance_s,
+        enhancer=_build_enhancer(settings),
     )
     return Services(settings, db, hub, face, audio, matcher, persona, self_voice)

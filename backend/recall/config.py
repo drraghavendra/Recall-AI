@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +31,12 @@ class Settings(BaseSettings):
     vad_speech_pad_ms: int = 100
     max_utterance_s: float = 15.0
     whisper_model: str = "base.en"
+    transcriber_backend: Literal["faster-whisper", "sarvam"] = "faster-whisper"
+    sarvam_model: str = "saaras:v4"
+    sarvam_mode: Literal["transcribe", "translate", "verbatim", "translit", "codemix"] = "codemix"
+    sarvam_language_code: str = "unknown"
+    sarvam_keyterms: list[str] = Field(default_factory=list)
+    speech_enhancer: Literal["none", "deepfilternet"] = "none"
     self_voice_threshold: float = 0.75
     min_self_voice_enroll_s: float = 3.0
 
