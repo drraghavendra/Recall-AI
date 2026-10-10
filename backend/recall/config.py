@@ -33,11 +33,16 @@ class Settings(BaseSettings):
     vad_speech_pad_ms: int = 100
     max_utterance_s: float = 15.0
 
-    # Speech-to-text provider selected by the transcriber factory. Both run locally on CPU.
-    stt_backend: Literal["whisper", "parakeet"] = "whisper"
+    # Speech-to-text provider selected by the transcriber factory. Whisper and Parakeet run locally;
+    # Sarvam is a paid API (key from SARVAM_API_KEY in the environment, like the other SDK credentials).
+    stt_backend: Literal["whisper", "parakeet", "sarvam"] = "whisper"
     whisper_model: str = "base.en"
     parakeet_model: str = "nemo-parakeet-tdt-0.6b-v2"
     parakeet_quantization: str | None = "int8"
+    sarvam_model: str = "saaras:v3"
+    sarvam_language_code: str = "unknown"
+    sarvam_mode: str | None = "transcribe"
+    sarvam_timeout_s: float = 10.0
 
     self_voice_threshold: float = 0.75
     min_self_voice_enroll_s: float = 3.0

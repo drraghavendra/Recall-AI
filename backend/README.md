@@ -46,6 +46,7 @@ Speech-to-text is selected the same way, with `RECALL_STT_BACKEND`:
 |---|---|---|---|
 | `whisper` (default) | Local CPU | `[ml]` | faster-whisper, `RECALL_WHISPER_MODEL` (default `base.en`) |
 | `parakeet` | Local CPU | `[parakeet]` | NVIDIA Parakeet TDT 0.6B via onnx-asr. `RECALL_PARAKEET_MODEL`: `nemo-parakeet-tdt-0.6b-v2` (English, default) or `-v3` (+24 European languages). ~620 MB int8 download on first start |
+| `sarvam` | Sarvam API (paid) | `[sarvam]` | Needs `SARVAM_API_KEY` in the environment. Strong on 22 Indian languages and code-mixed speech; see `RECALL_SARVAM_*` in `.env.example` |
 
 ```bash
 .venv/bin/pip install -e ".[ml,dev,parakeet]"
@@ -124,7 +125,7 @@ a safety net.
 | Module | Role | Swappable behind |
 |---|---|---|
 | `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
-| `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper or Parakeet) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
+| `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper, Parakeet or Sarvam) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `sarvam.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
 | `persona/` | Watermarked incremental updates via Claude structured output | `PersonaWriter` |
 | `db.py` | SQLite schema + queries | — |
