@@ -1,6 +1,6 @@
 # Recall-AI — Research: How Others Build This
 
-Scope: prior art for an ambient AI memory assistant (long-term vision: Meta Ray-Ban-style
+Project Scope: prior art for an ambient AI memory assistant (long-term vision: Meta Ray-Ban-style
 glasses; hackathon scope: Mac webcam + mic prototype) covering face recognition,
 conversation detection, transcript-to-person linking, persona/summary generation, and
 recall features. Maps to GitHub issues [#1–#11](https://github.com/drraghavendra/Recall-AI/issues).
