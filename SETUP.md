@@ -126,10 +126,11 @@ $env:RECALL_LOCAL_FACE_DB_PATH = "recall_faces.sqlite3"
 ```
 
 InsightFace uses the same `buffalo_l` CPU recognition model as the Whisper IMG face module. It
-stores embeddings locally in SQLite and does not store the original frames. The first run may
-download model files. Check model licensing before commercial use. Use face matching only with
-the people’s explicit consent. For a no-cloud UI smoke run, `RECALL_FACE_BACKEND=mock` skips AWS
-face recognition.
+stores embeddings locally in SQLite. When the web client's consent toggle is enabled, Recall-AI
+also stores one representative JPEG frame per recognized person in the backend database; the
+person card lets you view and remove it. The first run may download model files. Check model
+licensing before commercial use. Use face matching only with the people’s explicit consent. For a
+no-cloud UI smoke run, `RECALL_FACE_BACKEND=mock` skips AWS face recognition.
 
 ### Browser client
 

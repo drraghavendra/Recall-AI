@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
@@ -56,6 +56,20 @@ async def get_persona(face_id: str, request: Request) -> dict:
     if persona is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no persona yet - first meeting")
     return persona
+
+
+@app.get("/faces/{face_id}/portrait", include_in_schema=False)
+async def get_face_portrait(face_id: str, request: Request) -> Response:
+    image = _services(request).db.get_face_portrait(face_id)
+    if image is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no saved portrait for this face")
+    return Response(content=image, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=60"})
+
+
+@app.delete("/faces/{face_id}/portrait", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_face_portrait(face_id: str, request: Request) -> None:
+    if not _services(request).db.delete_face_portrait(face_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no saved portrait for this face")
 
 
 @app.post("/self-voice", status_code=status.HTTP_204_NO_CONTENT)
@@ -110,7 +124,11 @@ def _route(services: Services, raw: str) -> None:
     try:
         message = inbound_adapter.validate_json(raw)
         if isinstance(message, FramesMessage):
-            services.face.submit(message.ts, [base64.b64decode(f, validate=True) for f in message.frames])
+            services.face.submit(
+                message.ts,
+                [base64.b64decode(f, validate=True) for f in message.frames],
+                store_portrait=message.store_portrait,
+            )
             return
         pcm = base64.b64decode(message.pcm, validate=True)
     except (ValidationError, binascii.Error) as e:

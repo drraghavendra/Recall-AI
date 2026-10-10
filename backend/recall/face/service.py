@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import uuid
 from collections import Counter
 
 from recall.db import Database
@@ -29,32 +28,42 @@ class FaceService:
         self._db = db
         self._publish = publish
         self._frames_per_window = frames_per_window
-        self._queue: asyncio.Queue[tuple[float, list[bytes]]] = asyncio.Queue(maxsize=max_pending_windows)
+        self._queue: asyncio.Queue[tuple[float, list[bytes], bool]] = asyncio.Queue(maxsize=max_pending_windows)
 
-    def submit(self, ts: float, jpegs: list[bytes]) -> None:
+    def submit(self, ts: float, jpegs: list[bytes], store_portrait: bool = False) -> None:
         # Stale windows are worthless for a live overlay — drop the oldest instead of falling behind.
         if self._queue.full():
             self._queue.get_nowait()
             log.warning("face recognition is falling behind; dropped a frame window")
-        self._queue.put_nowait((ts, jpegs))
+        self._queue.put_nowait((ts, jpegs, store_portrait))
 
     async def run(self) -> None:
         while True:
-            ts, jpegs = await self._queue.get()
+            ts, jpegs, store_portrait = await self._queue.get()
             try:
-                await self._handle_window(ts, jpegs)
+                await self._handle_window(ts, jpegs, store_portrait)
             except Exception:
                 log.exception("face window at %.3f failed", ts)
 
-    async def _handle_window(self, ts: float, jpegs: list[bytes]) -> None:
+    async def _handle_window(self, ts: float, jpegs: list[bytes], store_portrait: bool = False) -> None:
         chosen = await asyncio.to_thread(select_sharpest, jpegs, self._frames_per_window)
         results = [await asyncio.to_thread(self._recognizer.search, image) for image in chosen]
         face_id, is_new, confidence = await self._resolve(chosen, results)
 
+        if store_portrait and face_id and chosen and self._db.get_face_portrait(face_id) is None:
+            self._db.save_face_portrait(face_id, chosen[0])
+
         self._db.insert_face_sample(ts, face_id, confidence)
         self._tracker.observe(ts, face_id)
         self._publish(
-            {"type": "face_update", "ts": ts, "face_id": face_id, "is_new": is_new, "confidence": confidence}
+            {
+                "type": "face_update",
+                "ts": ts,
+                "face_id": face_id,
+                "is_new": is_new,
+                "confidence": confidence,
+                "portrait_url": f"/faces/{face_id}/portrait" if face_id and self._db.get_face_portrait(face_id) else None,
+            }
         )
 
     async def _resolve(
@@ -69,7 +78,7 @@ class FaceService:
         if not unmatched:
             return None, False, 0.0
 
-        face_id = uuid.uuid4().hex
+        face_id = self._db.next_face_id()
         provider_face_id = await asyncio.to_thread(self._recognizer.enroll, unmatched[0], face_id)
         if provider_face_id is None:
             return None, False, 0.0
