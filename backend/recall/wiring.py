@@ -7,7 +7,7 @@ import numpy as np
 from recall.audio.pipeline import AudioPipeline
 from recall.audio.self_voice import SelfVoiceClassifier
 from recall.audio.speaker import ResemblyzerEncoder
-from recall.audio.transcriber import FasterWhisperTranscriber
+from recall.audio.types import Transcriber
 from recall.audio.vad import SileroVad
 from recall.config import Settings
 from recall.db import Database
@@ -85,6 +85,19 @@ def _build_recognizer(settings: Settings) -> FaceRecognizer:
     return recognizer
 
 
+def _build_transcriber(settings: Settings) -> Transcriber:
+    # Each provider is imported only when selected, so an install needs just that provider's extra.
+    if settings.stt_backend == "parakeet":
+        from recall.audio.parakeet import ParakeetTranscriber
+
+        log.info("speech-to-text: Parakeet %s (%s)", settings.parakeet_model, settings.parakeet_quantization or "fp32")
+        return ParakeetTranscriber(settings.parakeet_model, settings.parakeet_quantization)
+    from recall.audio.transcriber import FasterWhisperTranscriber
+
+    log.info("speech-to-text: faster-whisper %s", settings.whisper_model)
+    return FasterWhisperTranscriber(settings.whisper_model)
+
+
 def build_services(settings: Settings) -> Services:
     db = Database(settings.db_path)
     hub = EventHub()
@@ -119,7 +132,7 @@ def build_services(settings: Settings) -> Services:
 
     audio = AudioPipeline(
         SileroVad(settings.vad_threshold, settings.vad_min_silence_ms, settings.vad_speech_pad_ms, settings.sample_rate),
-        FasterWhisperTranscriber(settings.whisper_model),
+        _build_transcriber(settings),
         self_voice,
         matcher,
         settings.sample_rate,

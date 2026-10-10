@@ -40,6 +40,21 @@ until consent is enabled again. Face images and embeddings are sensitive data. U
 images only, and check the model/license terms before commercial use. `mock` is useful for API/UI
 development without a camera or cloud face provider.
 
+Speech-to-text is selected the same way, with `RECALL_STT_BACKEND`:
+
+| Value | Runs | Install | Notes |
+|---|---|---|---|
+| `whisper` (default) | Local CPU | `[ml]` | faster-whisper, `RECALL_WHISPER_MODEL` (default `base.en`) |
+| `parakeet` | Local CPU | `[parakeet]` | NVIDIA Parakeet TDT 0.6B via onnx-asr. `RECALL_PARAKEET_MODEL`: `nemo-parakeet-tdt-0.6b-v2` (English, default) or `-v3` (+24 European languages). ~620 MB int8 download on first start |
+
+```bash
+.venv/bin/pip install -e ".[ml,dev,parakeet]"
+export RECALL_STT_BACKEND=parakeet
+```
+
+Each provider implements the `Transcriber` protocol in `audio/types.py` and is imported only when
+selected, so adding another one is a new module plus a branch in `wiring._build_transcriber`.
+
 `--workers 1` is required: the focused face, the open conversation and the persona locks
 are in-process state. First start downloads the Whisper and Silero models and creates the
 Rekognition collection.
@@ -109,7 +124,7 @@ a safety net.
 | Module | Role | Swappable behind |
 |---|---|---|
 | `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
-| `audio/` | Silero VAD utterances → faster-whisper text + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
+| `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper or Parakeet) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
 | `persona/` | Watermarked incremental updates via Claude structured output | `PersonaWriter` |
 | `db.py` | SQLite schema + queries | — |
