@@ -492,9 +492,9 @@
     try {
       media = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        // Auto gain would make distant speakers as loud as the person in front; the backend uses loudness
-        // to tell them apart.
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+        // Auto gain on: with it off, quiet mics (e.g. earphones) sent ~-45 dBFS audio that speech detection
+        // chopped into sub-second fragments speech-to-text couldn't read. The lip check filters background voices.
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       video.srcObject = media;
       await video.play();

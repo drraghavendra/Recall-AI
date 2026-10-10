@@ -158,7 +158,7 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
   fallbacks enabled (`fallbacks="default"`). Override with `RECALL_ANTHROPIC_MODEL` /
   `RECALL_PERSONA_EFFORT`.
 - **Someone else's speech is only attributed to the focused face if it passes two checks**: it is
-  louder than `RECALL_MIN_OTHER_SPEECH_DBFS`, and (InsightFace only) the face's mouth opened and closed while
+  louder than `RECALL_MIN_OTHER_SPEECH_DBFS` (off by default, since the browser normalises loudness), and (InsightFace only) the face's mouth opened and closed while
   it was spoken. The browser client sends ~5 fps `lip_frames` while it hears sound for the second
   check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
   are heuristics; tune them with the per-utterance `level` and `lip check` log lines.

@@ -56,12 +56,13 @@ class Settings(BaseSettings):
 
     # Attributing someone else's speech to the face in focus. Quieter speech is treated as background
     # (unset to disable); the log prints each utterance's level so this can be tuned per mic and room.
-    # Normal speech in front of a laptop mic measured -30 to -45 dBFS, so this only drops distant voices.
-    min_other_speech_dbfs: float | None = -50.0
+    # Off by default: the browser's auto gain (needed so quiet mics give usable speech) makes loudness a
+    # poor near/far signal. Set it (e.g. -50) only for clients that send un-normalised audio.
+    min_other_speech_dbfs: float | None = None
     # Lip check (InsightFace only): the client sends ~5 fps lip frames while it hears sound. Speech during
     # which the focused face's mouth openness (inner-lip gap / mouth width) barely varied is background.
     lip_check: bool = True
-    lip_min_openness_std: float = 0.03
+    lip_min_openness_std: float = 0.02
 
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
     # Sonnet is plenty for a short profile and faster than Opus. The persona job runs every
