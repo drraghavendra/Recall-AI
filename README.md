@@ -6,7 +6,9 @@ Recognizes the face in front of you in near real time.
 Listens to the conversation and works out who said what.
 Distills each conversation into a living Persona: names, relationship, key facts, and a rolling summary.
 Surfaces that persona the next time the same face appears, before you have to ask.
+
 > *"You're meeting them for the first time."* is the empty state.
+
 > *"Alice. Works at a robotics startup. Training for a marathon. Asked you to send the paper."* is the goal.
 
 <img width="941" height="225" alt="image" src="https://github.com/user-attachments/assets/55df7acb-da89-4489-8896-1f9ab49c70f3" />
