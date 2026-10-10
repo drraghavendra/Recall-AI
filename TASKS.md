@@ -1,6 +1,6 @@
 # Recall-AI — Task Breakdown
 
-Hackathon demo target: **Mac webcam + mic**, split into a **minimal client** (capture only,
+Hackathon Project Idea Demo target: **Mac webcam + mic**, split into a **minimal client** (capture only,
 no ML dependencies) and a **backend service** (everything model-heavy). The service doesn't
 need to run on macOS — for now it's a second process on this same Mac (`localhost`), but
 nothing about the client changes if it's later pointed at a different host. See
