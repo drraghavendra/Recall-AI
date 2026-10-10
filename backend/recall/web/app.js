@@ -49,7 +49,9 @@
 
   // The face marked as the user themselves (laptop demo), if any.
   let wearerId = null;
-  let meHintDismissed = false;
+  // Ask which face is the user once we've heard their voice (or just learnt it), until they answer.
+  let meWanted = false;
+  let meDismissed = false;
 
   const personName = (faceId) => {
     if (faceId && faceId === wearerId) return "You";
@@ -290,6 +292,16 @@
     $("dialog-me").textContent = faceId === wearerId ? "This isn’t me" : "This is me";
   }
 
+  function updateMePrompt() {
+    const ask = meWanted && !wearerId && !meDismissed;
+    $("me-hint").hidden = !ask;
+    if (!ask) return;
+    $("me-yes").hidden = !focusedId;
+    $("me-hint-text").textContent = focusedId
+      ? `I can hear your voice. Is ${personName(focusedId)} (in the middle of the camera) you?`
+      : "I can hear your voice. If you’re on camera, look at it so I can tell which face is yours.";
+  }
+
   async function setWearer(faceId) {
     try {
       const response = await fetch("/wearer", {
@@ -307,7 +319,7 @@
 
   function showWearer(faceId) {
     wearerId = faceId || null;
-    if (wearerId) $("me-hint").hidden = true;
+    updateMePrompt();
     for (const id of cards.keys()) renderCardBody(id);
     if (dialogFace && $("person-dialog").open) renderDetails();
     updateSpecsHud();
@@ -562,14 +574,13 @@
       for (const faceId of present) void admit(faceId);
       if (event.face_id && event.portrait_url) setCardPhoto(event.face_id, event.portrait_url);
       updateCards();
+      updateMePrompt();
       if (focusedId !== previousFocus) appendLog(focusedId ? `${personName(focusedId)} is here` : "Looking for a familiar face");
     } else if (event.type === "providers_changed") {
       showProviders(event);
-    } else if (event.type === "transcript" && event.speaker === "self" && !wearerId && cards.size) {
-      // The user's own words only count once we know which face is theirs (laptop demo).
-      if (!meHintDismissed) $("me-hint").hidden = false;
-      addTranscript(event);
     } else if (event.type === "transcript") {
+      // The user's own words only count once we know which face is theirs (laptop demo).
+      if (event.speaker === "self" && !wearerId) { meWanted = true; updateMePrompt(); }
       addTranscript(event);
     } else if (event.type === "wearer_changed") {
       showWearer(event.face_id);
@@ -716,7 +727,6 @@
     $("voice-go").textContent = "Start reading";
     $("voice-go").disabled = false;
     $("voice-progress").hidden = true;
-    $("voice-me").hidden = true;
     setVoiceStatus("Takes about 10 seconds");
     if (!$("voice-dialog").open) $("voice-dialog").showModal();
   }
@@ -765,8 +775,10 @@
         voiceDone = true;
         setVoiceStatus("Got it, I’ll know when it’s you talking", "ok");
         $("voice-go").textContent = "Done";
-        // Laptop demo: the user faces the camera, so let them say which face is theirs.
-        $("voice-me").hidden = !focusedId || focusedId === wearerId;
+        // Laptop demo: the user faces the camera, so the people panel now asks which face is theirs.
+        meWanted = true;
+        meDismissed = false;
+        updateMePrompt();
         appendLog("Got it, I know your voice now");
       } catch (error) {
         setVoiceStatus("Couldn’t hear enough. Try again somewhere quieter", "error");
@@ -816,12 +828,9 @@
   setInterval(updateCards, 15000);
   $("dialog-close").addEventListener("click", () => $("person-dialog").close());
   $("dialog-forget").addEventListener("click", () => { if (dialogFace) void forgetPortrait(dialogFace); });
-  $("me-hint").addEventListener("click", () => { meHintDismissed = true; $("me-hint").hidden = true; });
+  $("me-yes").addEventListener("click", () => { if (focusedId) void setWearer(focusedId); });
+  $("me-no").addEventListener("click", () => { meDismissed = true; updateMePrompt(); });
   $("dialog-me").addEventListener("click", () => { if (dialogFace) void setWearer(dialogFace === wearerId ? null : dialogFace); });
-  $("voice-me").addEventListener("click", () => {
-    if (focusedId) void setWearer(focusedId);
-    $("voice-me").hidden = true;
-  });
   fetch("/wearer").then((response) => response.json()).then((body) => showWearer(body.face_id)).catch(() => {});
   // Clicking the dimmed backdrop (outside the panel) closes the pop-up.
   $("person-dialog").addEventListener("click", (event) => { if (event.target === $("person-dialog")) $("person-dialog").close(); });

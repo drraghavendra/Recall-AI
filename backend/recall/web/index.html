@@ -78,7 +78,10 @@
               <div id="people-empty" class="people-empty"><div class="lens-ring"></div><p>When someone familiar is with you, what you know about them will show here.</p></div>
             </div>
             <div id="waiting" class="waiting" hidden></div>
-            <div id="me-hint" class="me-hint" hidden>I can hear you, but I don’t know which face is yours. Tap your card and choose <b>This is me</b> so what you say is remembered too. <span class="me-hint-dismiss">(Not on camera? Tap to hide.)</span></div>
+            <div id="me-hint" class="me-hint" hidden>
+              <div id="me-hint-text" class="me-hint-text"></div>
+              <div class="me-hint-actions"><button id="me-yes" class="primary">Yes, that’s me</button><button id="me-no" class="secondary">I’m not on camera</button></div>
+            </div>
           </section>
 
           <details class="transcript-panel glass">
@@ -97,7 +100,7 @@
         <p id="voice-hint" class="voice-hint">So your own words aren’t mistaken for someone else’s. Press <b>Start reading</b>, then read this aloud in your normal voice:</p>
         <blockquote class="voice-script">“Good morning. I’m reading this so Recall can learn how my voice sounds. Today I’d like a cup of tea, a short walk outside, and a call with someone I care about.”</blockquote>
         <div id="voice-progress" class="voice-progress" hidden><div class="voice-bar"><i id="voice-bar-fill"></i></div><span id="voice-count"></span></div>
-        <div class="dialog-foot"><span id="voice-status"></span><span class="dialog-actions"><button id="voice-me" class="secondary" hidden>That’s me on camera</button><button id="voice-go" class="primary">Start reading</button></span></div>
+        <div class="dialog-foot"><span id="voice-status"></span><span class="dialog-actions"><button id="voice-go" class="primary">Start reading</button></span></div>
       </div>
     </dialog>
 

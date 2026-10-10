@@ -339,4 +339,5 @@ body.live .workspace { margin-top: 18px; }
 .dialog-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .voice-dialog #voice-me { padding: 10px 16px; }
 .me-hint { margin-top: 12px; padding: 12px 14px; border-radius: 14px; color: var(--clay-dark); background: var(--clay-soft); font-size: 16px; line-height: 1.45; }
-.me-hint { cursor: pointer; } .me-hint-dismiss { color: var(--muted); font-size: 14px; }
+.me-hint-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.me-hint-actions button { padding: 8px 16px; font-size: 16px; }
