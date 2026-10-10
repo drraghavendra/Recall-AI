@@ -66,16 +66,16 @@ class Settings(BaseSettings):
     # Lip check (InsightFace only): the client sends ~10 fps lip frames while it hears sound. A line is the
     # focused face's only if its mouth openness (inner-lip gap / mouth width) varied by at least
     # `lip_min_openness_std` in `lip_min_talking_fraction` of the 1 s slices with sound, and (when there are
-    # enough frames) rose and fell in step with the loudness: correlation >= `lip_min_sync`. Otherwise it's
+    # enough frames, and if `lip_min_sync` is set) rose and fell in step with the loudness. Otherwise it's
     # background. Every line logs both numbers ("lip check ...") for tuning.
     lip_check: bool = True
     # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
     # True: speech goes to whichever face's mouth moved most.
     lip_picks_speaker: bool = False
     lip_min_openness_std: float = 0.02
-    lip_min_talking_fraction: float = 0.4
-    # None turns the sync check off.
-    lip_min_sync: float | None = 0.1
+    lip_min_talking_fraction: float = 0.3
+    # Off by default (None): on real recordings the sync score was too noisy to reject on; it's still logged.
+    lip_min_sync: float | None = None
 
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
     # Sonnet is plenty for a short profile and faster than Opus. The persona job runs `persona_batch_s`

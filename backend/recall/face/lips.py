@@ -46,8 +46,8 @@ class LipActivityTracker:
         min_openness_std: float,
         min_frames: int = 4,
         keep_s: float = 120.0,
-        min_talking_fraction: float = 0.4,
-        min_sync: float | None = 0.1,
+        min_talking_fraction: float = 0.3,
+        min_sync: float | None = None,
         slice_s: float = 1.0,
     ):
         self._min_openness_std = min_openness_std
@@ -120,8 +120,8 @@ class LipActivityTracker:
             self._min_sync is None or sync is None or sync >= self._min_sync
         )
         log.info(
-            "lip check %.1f-%.1fs (%.1fs): %s moving %.0f%% of the sound (need %.0f%%), sync %s (need %s) -> %s",
-            start, end, end - start, face_id, fraction * 100, self._min_talking_fraction * 100,
+            "lip check %.1f-%.1fs (%.1fs, %d frames): %s moving %.0f%% of the sound (need %.0f%%), sync %s (need %s) -> %s",
+            start, end, end - start, hi - lo, face_id, fraction * 100, self._min_talking_fraction * 100,
             "n/a" if sync is None else f"{sync:.2f}", "n/a" if self._min_sync is None else f"{self._min_sync:.2f}",
             "talking" if talking else "still",
         )
@@ -224,10 +224,14 @@ class LipService:
         self._known_boxes = known_boxes
         self.tracker = tracker
         self._queue: asyncio.Queue[tuple[float, bytes]] = asyncio.Queue(maxsize=max_pending)
+        self._dropped = 0
 
     def submit(self, ts: float, jpeg: bytes) -> None:
         if self._queue.full():
             self._queue.get_nowait()
+            self._dropped += 1
+            if self._dropped % 20 == 1:
+                log.warning("lip check is falling behind; %d lip frames dropped so far", self._dropped)
         self._queue.put_nowait((ts, jpeg))
 
     async def run(self) -> None:
