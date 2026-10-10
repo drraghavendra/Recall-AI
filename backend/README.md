@@ -67,7 +67,8 @@ long-lived WebSocket, in-process state and background tasks.
 {"type": "audio",  "ts": 1760090000.0, "pcm": "<base64 16kHz mono s16le>"}
 ```
 
-Send one `frames` message per sampling window (5–10 frames / 2s) and audio continuously
+Send one `frames` message per sampling window (client default: 1 frame / 5s, set with
+`--window` / `--frames`) and audio continuously
 with no gaps, using the same clock (`time.time()`) for both `ts`.
 
 **Server → client**: `face_update {ts, face_id, is_new, confidence}`,

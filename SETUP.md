@@ -133,9 +133,11 @@ py -3.12 -m venv .venv
 
 Options (put `--server` **before** the subcommand):
 ```bash
-python -m recall_client --server http://192.168.1.20:8000 run --camera 1 --frames 8 --window 2
+python -m recall_client --server http://192.168.1.20:8000 run --camera 1 --window 5 --frames 1
 ```
-Press **q** or **Esc** in the video window to quit. Only **one** capture client can connect
+Face sampling defaults to **1 frame every 5 seconds** (~720 Rekognition calls/hour). Use
+`--window` (seconds) and `--frames` (frames per window) to change it. Press **q** or **Esc** in
+the video window to quit. Only **one** capture client can connect
 at a time.
 
 ### Camera & mic permissions
