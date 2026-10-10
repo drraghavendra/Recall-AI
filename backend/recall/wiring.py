@@ -12,6 +12,8 @@ from recall.audio.vad import SileroVad
 from recall.config import Settings
 from recall.db import Database
 from recall.events import EventHub
+from recall.face.mock import MockRecognizer
+from recall.face.recognizer import FaceRecognizer
 from recall.face.rekognition import RekognitionRecognizer
 from recall.face.service import FaceService
 from recall.face.tracker import FocusedFaceTracker
@@ -58,16 +60,27 @@ def _log_unexpected_exit(task: asyncio.Task) -> None:
         log.error("background task %s crashed", task.get_name(), exc_info=task.exception())
 
 
+def _build_recognizer(settings: Settings) -> FaceRecognizer:
+    if settings.face_backend == "mock":
+        log.warning(
+            "face backend is MOCK: reporting one of ids 1..%d, switching every %d windows",
+            settings.mock_face_count,
+            settings.mock_face_hold_windows,
+        )
+        return MockRecognizer(settings.mock_face_count, settings.mock_face_hold_windows)
+    recognizer = RekognitionRecognizer(
+        settings.rekognition_collection_id, settings.aws_region, settings.face_match_threshold
+    )
+    recognizer.ensure_collection()
+    return recognizer
+
+
 def build_services(settings: Settings) -> Services:
     db = Database(settings.db_path)
     hub = EventHub()
     tracker = FocusedFaceTracker(settings.face_confirm_windows, settings.face_absent_confirm_windows)
 
-    recognizer = RekognitionRecognizer(
-        settings.rekognition_collection_id, settings.aws_region, settings.face_match_threshold
-    )
-    recognizer.ensure_collection()
-    face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window)
+    face = FaceService(_build_recognizer(settings), tracker, db, hub.publish, settings.frames_per_window)
 
     persona = PersonaService(
         db,

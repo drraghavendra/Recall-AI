@@ -8,7 +8,12 @@ class Settings(BaseSettings):
 
     db_path: str = "recall.db"
 
-    # Face (AWS credentials come from the standard boto3 chain: env vars, ~/.aws, SSO profile)
+    # Face. "mock" skips AWS entirely and reports one of mock_face_count fixed ids ("1", "2", ...).
+    face_backend: Literal["rekognition", "mock"] = "rekognition"
+    mock_face_count: int = 3
+    mock_face_hold_windows: int = 6
+
+    # AWS credentials come from the standard boto3 chain: env vars, ~/.aws, SSO profile
     aws_region: str = "us-east-1"
     rekognition_collection_id: str = "recall-ai-faces"
     face_match_threshold: float = 90.0

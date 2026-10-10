@@ -76,7 +76,7 @@ class AudioPipeline:
         if self._speech_start is not None:
             await self._emit(self._speech_start, self._fed)
         if self._stream_start is not None:
-            self._listener.on_audio_time(self._ts(self._fed), in_speech=False)
+            self._listener.on_stream_end()
         self._clear_stream()
 
     async def _process(self, ts: float, pcm: bytes) -> None:
@@ -110,7 +110,7 @@ class AudioPipeline:
         if audio.size == 0:
             return
         text, speaker = await asyncio.to_thread(self._analyze, audio)
-        if text:
+        if any(ch.isalnum() for ch in text):  # Whisper emits e.g. ". . . ." on noise
             self._listener.on_utterance(Utterance(self._ts(start), self._ts(end), text, speaker))
 
     def _analyze(self, audio: np.ndarray) -> tuple[str, Speaker]:

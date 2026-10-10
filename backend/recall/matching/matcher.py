@@ -76,9 +76,18 @@ class ConversationMatcher:
         if in_speech:
             return
         for conv in [c for c in self._closing if c.ended_at <= ts]:
-            self._closing.remove(conv)
-            if conv.face_id is not None and conv.segment_count:
-                self._on_finalized(conv)
+            self._finalize(conv)
+
+    def on_stream_end(self) -> None:
+        if self._open:
+            self._end(self._open, self._open.last_speech_end)
+        for conv in list(self._closing):
+            self._finalize(conv)
+
+    def _finalize(self, conv: Conversation) -> None:
+        self._closing.remove(conv)
+        if conv.face_id is not None and conv.segment_count:
+            self._on_finalized(conv)
 
     def _apply_handoff(self, ts: float) -> None:
         conv = self._open
