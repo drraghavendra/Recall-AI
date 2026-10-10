@@ -78,6 +78,14 @@ class LipActivityTracker:
         )
         return (speaker, True) if spread >= self._min_openness_std else (None, True)
 
+    def face_talking(self, face_id: str, start: float, end: float, pad_s: float = 0.3) -> bool | None:
+        """Did `face_id`'s mouth move during [start, end]? None if too few of its frames to tell."""
+        spread = self._spread(face_id, start, end, pad_s)
+        if spread is None:
+            return None
+        log.info("lip check %.1f-%.1fs: %s %.3f (need %.3f)", start, end, face_id, spread, self._min_openness_std)
+        return spread >= self._min_openness_std
+
     def talking_during(self, start: float, end: float, pad_s: float = 0.3) -> bool | None:
         """Was anyone in view talking? True/False, or None if too few frames to tell."""
         speaker, decided = self.speaker_during(start, end, pad_s)

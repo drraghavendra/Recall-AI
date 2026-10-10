@@ -145,7 +145,11 @@ def build_services(settings: Settings) -> Services:
         hub.publish,
         lambda _conv: persona.request_run(),  # a conversation just ended: don't wait for the cycle
         gate=AttributionGate(
-            settings.min_other_speech_dbfs, None if lips is None else lips.tracker, settings.lip_picks_speaker
+            settings.min_other_speech_dbfs,
+            None if lips is None else lips.tracker,
+            settings.lip_picks_speaker,
+            # The focused face for most of the line, else whoever was focused when it started.
+            lambda start, end: db.majority_face(start, end) or tracker.face_at(start),
         ),
         max_utterance_s=settings.max_utterance_s,
     )

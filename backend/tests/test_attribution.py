@@ -67,8 +67,22 @@ def test_with_two_faces_the_line_goes_to_the_one_whose_mouth_moved():
     feed(tracker, 0.0, [2, 2.2, 2, 2.1, 2, 2.3, 2, 2.1], face_id="alice")  # listening
     feed(tracker, 0.0, [2, 12, 4, 14, 1, 10, 3, 12], face_id="bob")  # talking
     assert tracker.speaker_during(0.2, 1.4) == ("bob", True)
-    gate = AttributionGate(min_level_dbfs=None, lips=tracker)
+    gate = AttributionGate(min_level_dbfs=None, lips=tracker, lips_pick_speaker=True)
     assert gate(Utterance(0.2, 1.4, "hi", "other")) == Verdict(face_id="bob")
+
+
+def test_by_default_the_centre_face_must_be_the_one_talking():
+    tracker = lips()
+    feed(tracker, 0.0, [2, 2.2, 2, 2.1, 2, 2.3, 2, 2.1], face_id="alice")  # centre face, listening
+    feed(tracker, 0.0, [2, 12, 4, 14, 1, 10, 3, 12], face_id="bob")  # someone off to the side, talking
+    gate = AttributionGate(None, tracker, lips_pick_speaker=False, focused_during=lambda s, e: "alice")
+    assert gate(Utterance(0.2, 1.4, "hi", "other")) == Verdict(reason="lips_still")
+
+    gate = AttributionGate(None, tracker, lips_pick_speaker=False, focused_during=lambda s, e: "bob")
+    assert gate(Utterance(0.2, 1.4, "hi", "other")) == Verdict(face_id="bob")
+
+    gate = AttributionGate(None, tracker, lips_pick_speaker=False, focused_during=lambda s, e: "carol")
+    assert gate(Utterance(0.2, 1.4, "hi", "other")) == Verdict(face_id="carol")  # no lip frames: keep
 
 
 def test_lip_frame_faces_are_matched_to_recognised_people_by_position():
