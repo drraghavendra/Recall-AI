@@ -50,3 +50,7 @@ class UtteranceListener(Protocol):
     def on_audio_time(self, ts: float, in_speech: bool) -> None:
         """Called after every chunk with the stream time processed so far."""
         ...
+
+    def on_stream_end(self) -> None:
+        """The audio stream stopped (e.g. client disconnected); no more audio will arrive for it."""
+        ...

@@ -103,6 +103,19 @@ def test_different_face_hands_off_to_a_new_conversation(env):
     assert finalized == [first]
 
 
+def test_client_disconnect_closes_and_finalizes_the_open_conversation(env):
+    _, tracker, matcher, events, finalized = env
+    tracker.observe(0.0, "alice")
+    matcher.on_utterance(utterance(1.0, 3.0))
+    conv = matcher.open_conversation
+
+    matcher.on_stream_end()
+
+    assert matcher.open_conversation is None
+    assert (conv.ended_at, events[-1]["type"]) == (3.0, "conversation_ended")
+    assert finalized == [conv]
+
+
 def test_self_session_is_never_sent_for_persona(env):
     _, _, matcher, events, finalized = env
     matcher.on_utterance(utterance(0.0, 2.0, "self"))
