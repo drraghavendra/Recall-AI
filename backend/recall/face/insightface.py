@@ -8,7 +8,7 @@ from threading import RLock
 
 import numpy as np
 
-from recall.face.recognizer import SearchResult
+from recall.face.recognizer import FaceBox, FaceHit, SearchResult
 
 
 class InsightFaceRecognizer:
@@ -53,23 +53,33 @@ class InsightFaceRecognizer:
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
-    def _embedding(self, image_bytes: bytes) -> np.ndarray | None:
+    @staticmethod
+    def _decode(image_bytes: bytes):
         if not image_bytes:
             return None
         import cv2
 
-        image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        return cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+    @staticmethod
+    def _area(bbox) -> float:
+        return max(0.0, float(bbox[2] - bbox[0])) * max(0.0, float(bbox[3] - bbox[1]))
+
+    def _faces(self, image_bytes: bytes) -> list[tuple[FaceBox, np.ndarray | None]]:
+        """Every detected face, largest first, with its normalized embedding (None if unusable)."""
+        image = self._decode(image_bytes)
         if image is None:
-            return None
-        faces = self._face_app.get(image)
-        if not faces:
-            return None
-        # Match the existing focused-face behavior: use the largest detected face.
-        face = max(
-            faces,
-            key=lambda item: max(0.0, float(item.bbox[2] - item.bbox[0]))
-            * max(0.0, float(item.bbox[3] - item.bbox[1])),
-        )
+            return []
+        height, width = getattr(image, "shape", (1, 1))[:2]
+        faces = sorted(self._face_app.get(image), key=lambda face: self._area(face.bbox), reverse=True)
+        found = []
+        for face in faces:
+            x0, y0, x1, y1 = (float(v) for v in face.bbox[:4])
+            box = (x0 / width, y0 / height, (x1 - x0) / width, (y1 - y0) / height)
+            found.append((box, self._normalized_embedding(face)))
+        return found
+
+    def _normalized_embedding(self, face) -> np.ndarray | None:
         # A hand over the face or a blurry detection gives a junk embedding; better to see "no face" than guess.
         if float(getattr(face, "det_score", 1.0)) < self._min_det_score:
             return None
@@ -79,24 +89,31 @@ class InsightFaceRecognizer:
             return None
         return embedding / norm
 
+    def _embedding(self, image_bytes: bytes) -> np.ndarray | None:
+        # Match the existing focused-face behavior: use the largest detected face.
+        faces = self._faces(image_bytes)
+        return faces[0][1] if faces else None
+
     @staticmethod
     def _similarity(left: np.ndarray, right: np.ndarray) -> float:
         if left.shape != right.shape:
             return -1.0
         return float(np.dot(left, right) / (np.linalg.norm(left) * np.linalg.norm(right)))
 
-    def search(self, image: bytes) -> SearchResult:
-        embedding = self._embedding(image)
+    def _saved_embeddings(self) -> list[tuple[str, np.ndarray]]:
+        with self._lock, closing(self._connect()) as conn:
+            rows = conn.execute("SELECT face_id, embedding FROM face_embeddings").fetchall()
+        return [(face_id, np.frombuffer(raw, dtype=np.float32)) for face_id, raw in rows]
+
+    def _match(self, embedding: np.ndarray | None, saved: list[tuple[str, np.ndarray]]) -> SearchResult:
         if embedding is None:
             return SearchResult(face_found=False, face_id=None, similarity=0.0)
         best_id: str | None = None
         best_score = -1.0
-        with self._lock, closing(self._connect()) as conn:
-            for face_id, raw in conn.execute("SELECT face_id, embedding FROM face_embeddings"):
-                saved = np.frombuffer(raw, dtype=np.float32)
-                score = self._similarity(embedding, saved)
-                if score > best_score:
-                    best_id, best_score = face_id, score
+        for face_id, vector in saved:
+            score = self._similarity(embedding, vector)
+            if score > best_score:
+                best_id, best_score = face_id, score
         if best_id is not None and best_score >= self._match_threshold:
             return SearchResult(face_found=True, face_id=best_id, similarity=best_score)
         if best_id is not None and best_score >= self._new_face_threshold:
@@ -104,6 +121,27 @@ class InsightFaceRecognizer:
             # Report no usable face so the caller neither switches identity nor enrolls a duplicate.
             return SearchResult(face_found=False, face_id=None, similarity=best_score)
         return SearchResult(face_found=True, face_id=None, similarity=max(0.0, best_score))
+
+    def search(self, image: bytes) -> SearchResult:
+        return self._match(self._embedding(image), self._saved_embeddings())
+
+    def search_all(self, image: bytes) -> list[FaceHit]:
+        faces = self._faces(image)
+        saved = self._saved_embeddings() if faces else []
+        return [FaceHit(self._match(embedding, saved), box) for box, embedding in faces]
+
+    def detect_landmarks(self, image_bytes: bytes) -> tuple[np.ndarray, np.ndarray] | None:
+        """Detection only (no recognition) for lip frames: the image and the largest face's 5 keypoints."""
+        image = self._decode(image_bytes)
+        if image is None:
+            return None
+        bboxes, kpss = self._face_app.det_model.detect(image, max_num=0, metric="default")
+        if bboxes is None or len(bboxes) == 0 or kpss is None:
+            return None
+        largest = max(range(len(bboxes)), key=lambda i: self._area(bboxes[i]))
+        if float(bboxes[largest][4]) < self._min_det_score:
+            return None
+        return image, kpss[largest]
 
     def enroll(self, image: bytes, face_id: str) -> str | None:
         embedding = self._embedding(image)

@@ -54,8 +54,19 @@ class Settings(BaseSettings):
     min_speech_duration_s: float = 1.2
     min_silence_duration_s: float = 6.0
 
+    # Attributing someone else's speech to the face in focus. Quieter speech is treated as background
+    # (unset to disable); the log prints each utterance's level so this can be tuned per mic and room.
+    min_other_speech_dbfs: float | None = -42.0
+    # Lip check (InsightFace only): the client sends ~5 fps lip frames while it hears sound, and speech
+    # during which the focused face's mouth barely moved is treated as background.
+    lip_check: bool = True
+    lip_min_motion: float = 3.0
+    lip_motion_ratio: float = 1.5
+    lip_min_talking_fraction: float = 0.3
+
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
-    anthropic_model: str = "claude-opus-5-5"
+    # Sonnet is plenty for a short profile and much faster than Opus; updates run about once a minute.
+    anthropic_model: str = "claude-sonnet-5-5"
     persona_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
-    persona_update_interval_s: float = 300.0
-    persona_min_new_segments: int = 3
+    persona_update_interval_s: float = 60.0
+    persona_min_new_segments: int = 2

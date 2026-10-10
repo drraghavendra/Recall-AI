@@ -20,6 +20,7 @@ class Utterance:
     end: float
     text: str
     speaker: Speaker
+    level_dbfs: float | None = None
 
 
 class VoiceActivityDetector(Protocol):

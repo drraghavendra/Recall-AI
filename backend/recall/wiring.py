@@ -13,11 +13,13 @@ from recall.audio.vad import SileroVad
 from recall.config import Settings
 from recall.db import Database
 from recall.events import EventHub
+from recall.face.lips import LipActivityTracker, LipService
 from recall.face.mock import MockRecognizer
 from recall.face.recognizer import FaceRecognizer
 from recall.face.rekognition import RekognitionRecognizer
 from recall.face.service import FaceService
 from recall.face.tracker import FocusedFaceTracker
+from recall.matching.attribution import AttributionGate
 from recall.matching.matcher import ConversationMatcher
 from recall.persona.llm import ClaudePersonaWriter
 from recall.persona.service import PersonaService
@@ -37,6 +39,7 @@ class Services:
     persona: PersonaService
     self_voice: SelfVoiceClassifier
     providers: ProviderSwitcher
+    lips: LipService | None = None
     capture_client_connected: bool = False
     _tasks: list[asyncio.Task] = field(default_factory=list)
 
@@ -48,6 +51,8 @@ class Services:
                 self.persona.checkpoint_loop(lambda: self.matcher.open_conversation), name="persona-checkpoints"
             ),
         ]
+        if self.lips is not None:
+            self._tasks.append(asyncio.create_task(self.lips.run(), name="lips"))
         for task in self._tasks:
             task.add_done_callback(_log_unexpected_exit)
 
@@ -121,6 +126,14 @@ def build_services(settings: Settings) -> Services:
     recognizer = _build_recognizer(settings)
     face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window)
 
+    lips = None
+    detect_landmarks = getattr(recognizer, "detect_landmarks", None)
+    if settings.lip_check and detect_landmarks is not None:
+        lips = LipService(
+            detect_landmarks,
+            LipActivityTracker(settings.lip_min_motion, settings.lip_motion_ratio, settings.lip_min_talking_fraction),
+        )
+
     persona = PersonaService(
         db,
         hub.publish,
@@ -135,6 +148,8 @@ def build_services(settings: Settings) -> Services:
         settings.min_silence_duration_s,
         hub.publish,
         persona.on_conversation_finalized,
+        gate=AttributionGate(settings.min_other_speech_dbfs, None if lips is None else lips.tracker),
+        max_utterance_s=settings.max_utterance_s,
     )
 
     stored_profile = db.get_self_voice()
@@ -166,4 +181,4 @@ def build_services(settings: Settings) -> Services:
         settings.stt_backend,
         transcriber,
     )
-    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers)
+    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers, lips)

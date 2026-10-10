@@ -149,9 +149,16 @@ a safety net.
 - **A conversation opens when a ≥`min_speech_duration` utterance completes**, back-dated to
   its onset, rather than mid-utterance. Same result, simpler, but the
   `conversation_started` event can lag by up to `RECALL_MAX_UTTERANCE_S` during a monologue.
-- **The persona model is `claude-opus-5-5` at low effort**, with server-side refusal
+- **The persona model is `claude-sonnet-5-5` at low effort**, updated about once a minute mid-conversation, with server-side refusal
   fallbacks enabled (`fallbacks="default"`). Override with `RECALL_ANTHROPIC_MODEL` /
   `RECALL_PERSONA_EFFORT`.
+- **Someone else's speech is only attributed to the focused face if it passes two checks**: it is
+  louder than `RECALL_MIN_OTHER_SPEECH_DBFS`, and (InsightFace only) the face's mouth moved while
+  it was spoken. The browser client sends ~5 fps `lip_frames` while it hears sound for the second
+  check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
+  are heuristics; tune them with the per-utterance `level` and `lip check` log lines.
+- **Other known faces in frame** are listed in `face_update.others` (display only: only the focused
+  face is enrolled or attributed speech). Needs a provider with `search_all` (InsightFace).
 - **Transcription must keep up with real time** or the write path falls progressively
   behind (it never drops audio). `base.en` is fine on Apple Silicon; go smaller if not.
 - A failed *final* persona update isn't retried (there's no later run for a closed

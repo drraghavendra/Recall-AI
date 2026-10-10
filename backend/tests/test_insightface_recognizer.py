@@ -83,3 +83,30 @@ def test_low_detection_score_face_is_ignored(tmp_path, monkeypatch):
 
     assert recognizer.enroll(b"jpeg", "person_001") is None
     assert recognizer.search(b"jpeg").face_found is False
+
+
+class TwoFaceApp:
+    """A large face (embedding a) and a smaller one (embedding b)."""
+
+    def __init__(self, a, b):
+        self.faces = [
+            SimpleNamespace(bbox=np.array([0, 0, 2, 2]), normed_embedding=b),
+            SimpleNamespace(bbox=np.array([0, 0, 10, 10]), normed_embedding=a),
+        ]
+
+    def get(self, _image):
+        return self.faces
+
+
+def test_search_all_matches_every_face_largest_first(tmp_path, monkeypatch):
+    fake_cv2(monkeypatch)
+    recognizer = InsightFaceRecognizer(str(tmp_path / "faces.sqlite3"), face_app=FakeFaceApp([1.0, 0.0]))
+    recognizer.enroll(b"jpeg", "person_001")
+    recognizer._face_app = FakeFaceApp([0.0, 1.0])
+    recognizer.enroll(b"jpeg", "person_002")
+    recognizer._face_app = TwoFaceApp([0.0, 1.0], [1.0, 0.0])
+
+    hits = recognizer.search_all(b"jpeg")
+
+    assert [hit.result.face_id for hit in hits] == ["person_002", "person_001"]
+    assert recognizer.search(b"jpeg").face_id == "person_002"

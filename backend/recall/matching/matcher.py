@@ -27,6 +27,12 @@ class ConversationMatcher:
     `min_speech_s` arrives (back-dated to its onset), closes after `min_silence_s` of silence, and is
     handed off when a different face is confirmed. Closed conversations are finalized (persona update)
     only once no in-progress utterance could still belong to them.
+
+    Someone else's speech that `gate` rejects (too quiet, or the focused face's lips weren't moving) is
+    background: it is shown as such but never stored, attributed, or allowed to open or extend a
+    conversation. Because the audio pipeline emits at least every `max_utterance_s`, speech still in
+    progress after that long can't be ours, so continuous background chatter doesn't hold a
+    conversation open forever.
     """
 
     def __init__(
@@ -37,6 +43,8 @@ class ConversationMatcher:
         min_silence_s: float,
         publish: Publish,
         on_finalized: Callable[[Conversation], None],
+        gate: Callable[[Utterance], str | None] | None = None,
+        max_utterance_s: float | None = None,
     ):
         self._db = db
         self._tracker = tracker
@@ -44,6 +52,8 @@ class ConversationMatcher:
         self._min_silence_s = min_silence_s
         self._publish = publish
         self._on_finalized = on_finalized
+        self._gate = gate
+        self._max_utterance_s = max_utterance_s
         self._open: Conversation | None = None
         self._closing: list[Conversation] = []
 
@@ -52,6 +62,10 @@ class ConversationMatcher:
         return self._open
 
     def on_utterance(self, utterance: Utterance) -> None:
+        if utterance.speaker == "other" and self._gate is not None and (reason := self._gate(utterance)):
+            log.info("background speech (%s): %r", reason, utterance.text)
+            self._publish_transcript(utterance, "background", None, reason)
+            return
         midpoint = (utterance.start + utterance.end) / 2
         self._apply_handoff(midpoint)
         conv = self._conversation_at(midpoint)
@@ -64,16 +78,7 @@ class ConversationMatcher:
         self._db.insert_segment(
             conv.conv_id, utterance.start, utterance.end, utterance.text, utterance.speaker, face_id
         )
-        self._publish(
-            {
-                "type": "transcript",
-                "ts": utterance.start,
-                "end_ts": utterance.end,
-                "text": utterance.text,
-                "speaker": utterance.speaker,
-                "face_id": face_id,
-            }
-        )
+        self._publish_transcript(utterance, utterance.speaker, face_id)
         conv.segment_count += 1
         if conv is self._open:
             conv.last_speech_end = max(conv.last_speech_end, utterance.end)
@@ -81,12 +86,29 @@ class ConversationMatcher:
     def on_audio_time(self, ts: float, in_speech: bool) -> None:
         self._apply_handoff(ts)
         open_conv = self._open
-        if open_conv and not in_speech and ts - open_conv.last_speech_end >= self._min_silence_s:
+        if open_conv and self._settled(open_conv.last_speech_end + self._min_silence_s, ts, in_speech):
             self._end(open_conv, open_conv.last_speech_end)
-        if in_speech:
-            return
-        for conv in [c for c in self._closing if c.ended_at <= ts]:
+        for conv in [c for c in self._closing if self._settled(c.ended_at, ts, in_speech)]:
             self._finalize(conv)
+
+    def _settled(self, since: float, ts: float, in_speech: bool) -> bool:
+        """Has `since` passed, with no speech in progress that could still be attributed before it?"""
+        if ts < since:
+            return False
+        return not in_speech or (self._max_utterance_s is not None and ts - since >= self._max_utterance_s)
+
+    def _publish_transcript(self, utterance: Utterance, speaker: str, face_id: str | None, reason: str | None = None):
+        event = {
+            "type": "transcript",
+            "ts": utterance.start,
+            "end_ts": utterance.end,
+            "text": utterance.text,
+            "speaker": speaker,
+            "face_id": face_id,
+        }
+        if reason:
+            event["reason"] = reason
+        self._publish(event)
 
     def on_stream_end(self) -> None:
         if self._open:

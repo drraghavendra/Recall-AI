@@ -51,7 +51,7 @@ class FaceService:
 
     async def _handle_window(self, ts: float, jpegs: list[bytes], store_portrait: bool = False) -> None:
         chosen = await asyncio.to_thread(select_sharpest, jpegs, self._frames_per_window)
-        results = [await asyncio.to_thread(self._recognizer.search, image) for image in chosen]
+        results, others = await self._search(chosen)
         face_id, is_new, confidence = await self._resolve(chosen, results)
 
         if store_portrait and face_id and chosen and self._db.get_face_portrait(face_id) is None:
@@ -67,8 +67,29 @@ class FaceService:
                 "is_new": is_new,
                 "confidence": confidence,
                 "portrait_url": f"/faces/{face_id}/portrait" if face_id and self._db.get_face_portrait(face_id) else None,
+                "others": [other for other in others if other["face_id"] != face_id],
             }
         )
+
+    async def _search(self, images: list[bytes]) -> tuple[list[SearchResult], list[dict]]:
+        """The focused (largest) face's result per image, plus known faces also in view in the last image.
+
+        Only the focused face is ever enrolled or attributed speech; other known faces are display-only.
+        """
+        search_all = getattr(self._recognizer, "search_all", None)
+        if search_all is None:
+            return [await asyncio.to_thread(self._recognizer.search, image) for image in images], []
+        hits_per_image = [await asyncio.to_thread(search_all, image) for image in images]
+        results = [hits[0].result if hits else SearchResult(False, None, 0.0) for hits in hits_per_image]
+        others: dict[str, dict] = {}
+        for hit in hits_per_image[-1][1:] if hits_per_image else []:
+            if hit.result.face_id and hit.result.face_id not in others:
+                others[hit.result.face_id] = {
+                    "face_id": hit.result.face_id,
+                    "similarity": round(hit.result.similarity, 3),
+                    "box": [round(v, 4) for v in hit.box],
+                }
+        return results, list(others.values())
 
     async def _resolve(
         self, images: list[bytes], results: list[SearchResult]

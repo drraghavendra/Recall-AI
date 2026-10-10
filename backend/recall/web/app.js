@@ -2,11 +2,23 @@
   const TARGET_RATE = 16000;
   const FRAME_PERIOD_MS = 1000;
   const AUDIO_CHUNK_SAMPLES = 1600;
+  // Lip check: while the mic hears sound, send small frames at ~5 fps so the backend can tell whether
+  // the person in focus is the one talking.
+  const LIP_PERIOD_MS = 200;
+  const LIP_HOLD_MS = 1500;
+  const LIP_SOUND_RMS = 0.01;
+  const OTHER_FACE_TTL_MS = 4000;
   const $ = (id) => document.getElementById(id);
 
   const video = $("video");
   const canvas = document.createElement("canvas");
   const context2d = canvas.getContext("2d");
+  const lipCanvas = document.createElement("canvas");
+  const lipContext = lipCanvas.getContext("2d");
+  let lipCheck = false;
+  let lipTimer = null;
+  let lipUntil = 0;
+  const others = new Map();
   let media = null;
   let socket = null;
   let audioContext = null;
@@ -100,7 +112,36 @@
       offset += AUDIO_CHUNK_SAMPLES;
     }
     pendingAudio = joined.slice(offset);
+    if (lipCheck && rms(incoming) > LIP_SOUND_RMS) startLipBurst();
     event.outputBuffer.getChannelData(0).fill(0);
+  }
+
+  function rms(samples) {
+    let sum = 0;
+    for (let i = 0; i < samples.length; i += 1) sum += samples[i] * samples[i];
+    return Math.sqrt(sum / Math.max(1, samples.length));
+  }
+
+  function startLipBurst() {
+    lipUntil = performance.now() + LIP_HOLD_MS;
+    if (!lipTimer) lipTimer = setInterval(sendLipFrame, LIP_PERIOD_MS);
+  }
+
+  function stopLipBurst() {
+    if (lipTimer) clearInterval(lipTimer);
+    lipTimer = null;
+  }
+
+  function sendLipFrame() {
+    if (performance.now() > lipUntil) return stopLipBurst();
+    if (!socket || socket.readyState !== WebSocket.OPEN || video.readyState < 2 || !video.videoWidth) return;
+    if (socket.bufferedAmount > 1_000_000) return;
+    const scale = Math.min(1, 640 / video.videoWidth);
+    lipCanvas.width = Math.round(video.videoWidth * scale);
+    lipCanvas.height = Math.round(video.videoHeight * scale);
+    lipContext.drawImage(video, 0, 0, lipCanvas.width, lipCanvas.height);
+    const jpeg = lipCanvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+    socket.send(JSON.stringify({ type: "lip_frames", ts: Date.now() / 1000, frame: jpeg }));
   }
 
   function sendFrame() {
@@ -163,6 +204,65 @@
     if (!facts.length && !persona.summary) root.textContent = "No saved details yet.";
   }
 
+  function personaLine(persona) {
+    if (!persona) return "First meeting · no memory yet";
+    return persona.summary || (persona.key_facts || [])[0] || "No saved details yet.";
+  }
+
+  async function loadOtherPersona(faceId) {
+    try {
+      const response = await fetch(`/persona/${encodeURIComponent(faceId)}`);
+      const persona = response.ok ? await response.json() : null;
+      updateOther(faceId, persona);
+    } catch {
+      updateOther(faceId, undefined);
+    }
+  }
+
+  function updateOther(faceId, persona) {
+    const entry = others.get(faceId);
+    if (!entry) return;
+    entry.el.querySelector(".other-memory").textContent =
+      persona === undefined ? "Could not load memories" : personaLine(persona);
+  }
+
+  function renderOthers(list) {
+    const now = performance.now();
+    for (const other of list || []) {
+      if (!other.face_id || other.face_id === currentFaceId) continue;
+      let entry = others.get(other.face_id);
+      if (!entry) {
+        const el = document.createElement("div");
+        el.className = "other-person";
+        const name = document.createElement("div");
+        name.className = "other-name";
+        name.textContent = personName(other.face_id);
+        const memory = document.createElement("div");
+        memory.className = "other-memory";
+        memory.textContent = "Recalling…";
+        el.append(name, memory);
+        $("others-list").append(el);
+        entry = { el };
+        others.set(other.face_id, entry);
+        void loadOtherPersona(other.face_id);
+      }
+      entry.lastSeen = now;
+    }
+    pruneOthers();
+  }
+
+  function pruneOthers() {
+    const now = performance.now();
+    for (const [faceId, entry] of others) {
+      if (faceId === currentFaceId || now - entry.lastSeen > OTHER_FACE_TTL_MS) {
+        entry.el.remove();
+        others.delete(faceId);
+      }
+    }
+    $("others").hidden = others.size === 0;
+    $("others-count").textContent = `${others.size} ${others.size === 1 ? "PERSON" : "PEOPLE"}`;
+  }
+
   function showPortrait(url) {
     if (!url || url === lastPortraitUrl) return;
     lastPortraitUrl = url;
@@ -205,10 +305,12 @@
     const root = $("transcript");
     root.querySelector(".transcript-empty")?.remove();
     const line = document.createElement("div");
-    line.className = `transcript-line ${event.speaker === "self" ? "self" : "other"}`;
+    const background = event.speaker === "background";
+    line.className = `transcript-line ${event.speaker === "self" ? "self" : background ? "background" : "other"}`;
     const speaker = document.createElement("span");
-    speaker.className = `transcript-speaker ${event.speaker === "self" ? "self" : ""}`;
-    speaker.textContent = event.speaker === "self" ? "YOU" : personName(event.face_id);
+    speaker.className = `transcript-speaker ${event.speaker === "self" ? "self" : background ? "background" : ""}`;
+    speaker.textContent = event.speaker === "self" ? "YOU" : background ? "NEARBY" : personName(event.face_id);
+    if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus" : "The person in focus wasn’t moving their lips";
     const text = document.createElement("span");
     text.className = "transcript-text";
     text.textContent = event.text;
@@ -218,6 +320,7 @@
     root.scrollTop = root.scrollHeight;
     transcriptCount += 1;
     $("transcript-count").textContent = `${transcriptCount} ${transcriptCount === 1 ? "LINE" : "LINES"}`;
+    if (background) return;
     showToast(event.speaker === "self" ? `You said · “${event.text}”` : `${personName(event.face_id)} · “${event.text}”`);
   }
 
@@ -286,12 +389,14 @@
         $("confidence").textContent = `${Math.round(event.confidence * 100)}% match`;
       }
       if (event.face_id) showPortrait(event.portrait_url);
+      renderOthers(event.others);
       appendLog(event.face_id ? `${personName(event.face_id)} recognized` : "No face currently in focus");
     } else if (event.type === "providers_changed") {
       showProviders(event);
     } else if (event.type === "transcript") {
       addTranscript(event);
     } else if (event.type === "persona_updated") {
+      if (others.has(event.face_id)) updateOther(event.face_id, event.persona);
       if (event.face_id === currentFaceId) {
         renderPersona(event.persona);
         $("memory-state").textContent = "JUST UPDATED";
@@ -313,7 +418,9 @@
     try {
       media = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        // Auto gain would make distant speakers as loud as the person in front; the backend uses loudness
+        // to tell them apart.
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
       });
       video.srcObject = media;
       await video.play();
@@ -360,6 +467,10 @@
   async function stopCapture(updateStatus = true) {
     if (frameTimer) clearInterval(frameTimer);
     frameTimer = null;
+    stopLipBurst();
+    for (const entry of others.values()) entry.el.remove();
+    others.clear();
+    pruneOthers();
     if (voiceTimer) {
       clearTimeout(voiceTimer);
       voiceTimer = null;
@@ -437,10 +548,12 @@
   $("stop").addEventListener("click", () => void stopCapture());
   $("voice").addEventListener("click", enrollVoice);
   $("forget-portrait").addEventListener("click", forgetPortrait);
+  setInterval(pruneOthers, 1000);
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });
 
   for (const id of Object.keys(PROVIDER_SELECTS)) $(id).addEventListener("change", (event) => void switchProvider(event.target));
   fetch("/providers").then((response) => response.json()).then(showProviders).catch(() => {
     appendLog("Could not read the active face and speech modules.");
   });
+  fetch("/health").then((response) => response.json()).then((health) => { lipCheck = Boolean(health.lip_check); }).catch(() => {});
 })();

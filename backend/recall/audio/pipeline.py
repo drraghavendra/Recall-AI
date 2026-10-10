@@ -3,6 +3,7 @@ import logging
 
 import numpy as np
 
+from recall.audio.level import speech_level_dbfs
 from recall.audio.pcm import pcm16_to_float
 from recall.audio.self_voice import SelfVoiceClassifier
 from recall.audio.types import (
@@ -113,12 +114,13 @@ class AudioPipeline:
         audio = self._buffer[start - self._buffer_offset : end - self._buffer_offset]
         if audio.size == 0:
             return
-        text, speaker = await asyncio.to_thread(self._analyze, audio)
+        text, speaker, level = await asyncio.to_thread(self._analyze, audio)
         if any(ch.isalnum() for ch in text):  # Whisper emits e.g. ". . . ." on noise
-            self._listener.on_utterance(Utterance(self._ts(start), self._ts(end), text, speaker))
+            self._listener.on_utterance(Utterance(self._ts(start), self._ts(end), text, speaker, level))
 
-    def _analyze(self, audio: np.ndarray) -> tuple[str, Speaker]:
-        return self._transcriber.transcribe(audio), self._speaker.classify(audio)
+    def _analyze(self, audio: np.ndarray) -> tuple[str, Speaker, float]:
+        level = speech_level_dbfs(audio, self._sample_rate)
+        return self._transcriber.transcribe(audio), self._speaker.classify(audio), level
 
     def _trim(self) -> None:
         keep_from = (self._speech_start if self._speech_start is not None else self._fed) - self._preroll
