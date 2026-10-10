@@ -1,6 +1,6 @@
 """Audio interfaces and data types. Deliberately import-light: no torch / whisper / resemblyzer."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 import numpy as np
@@ -21,6 +21,10 @@ class Utterance:
     text: str
     speaker: Speaker
     level_dbfs: float | None = None
+    # RMS loudness every `ENVELOPE_HOP_S` from `start` (see audio/level.py), for the lip/sound sync check.
+    envelope: tuple[float, ...] | None = None
+    # Voice embedding (L2-normalised), for telling apart the people we've heard before.
+    voice: np.ndarray | None = field(default=None, compare=False, repr=False)
 
 
 class VoiceActivityDetector(Protocol):

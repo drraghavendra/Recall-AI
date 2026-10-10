@@ -324,3 +324,20 @@ body.live .workspace { margin-top: 18px; }
 .people-mode:hover { border-color: var(--clay); color: var(--clay-dark); }
 .people-mode:focus-visible { outline: 3px solid var(--clay); outline-offset: 2px; }
 .people.everyone { max-height: 70vh; overflow-y: auto; padding-right: 4px; }
+
+/* "Learn my voice" prompt */
+.voice-dialog .dialog-name { padding-right: 44px; }
+.voice-hint { margin: 12px 0 0; color: var(--muted); font-size: 18px; line-height: 1.5; }
+.voice-script { margin: 16px 0 0; padding: 16px 18px; border-left: 4px solid var(--clay); border-radius: 12px; background: var(--surface-soft); font: 500 22px/1.5 var(--serif); }
+.voice-progress { display: flex; align-items: center; gap: 12px; margin-top: 16px; font-weight: 700; color: var(--clay-dark); }
+.voice-bar { flex: 1; height: 10px; border-radius: 99px; background: var(--clay-soft); overflow: hidden; }
+.voice-bar i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--clay); transition: width .25s linear; }
+.voice-dialog .dialog-foot #voice-status { font-size: 16px; }
+.voice-dialog .dialog-foot #voice-status.ok { color: var(--sage); font-weight: 700; }
+.voice-dialog .dialog-foot #voice-status.error { color: var(--rose); font-weight: 700; }
+.voice-dialog #voice-go { padding: 10px 20px; }
+.dialog-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.voice-dialog #voice-me { padding: 10px 16px; }
+.me-hint { margin-top: 12px; padding: 12px 14px; border-radius: 14px; color: var(--clay-dark); background: var(--clay-soft); font-size: 16px; line-height: 1.45; }
+.me-hint-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.me-hint-actions button { padding: 8px 16px; font-size: 16px; }

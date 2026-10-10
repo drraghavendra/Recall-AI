@@ -4,9 +4,9 @@
   // Webcams start dark while auto-exposure settles; frames sent right away gave black saved photos.
   const CAMERA_WARMUP_MS = 2000;
   const AUDIO_CHUNK_SAMPLES = 1600;
-  // Lip check: while the mic hears sound, send small frames at ~5 fps so the backend can tell whether
+  // Lip check: while the mic hears sound, send small frames at ~10 fps so the backend can tell whether
   // the person in focus is the one talking.
-  const LIP_PERIOD_MS = 200;
+  const LIP_PERIOD_MS = 100;
   const LIP_HOLD_MS = 1500;
   const LIP_SOUND_RMS = 0.01;
   // People cards. "Everyone" mode: a card per person in view, dropped once they've been gone a while.
@@ -47,7 +47,14 @@
   let transcriptCount = 0;
   let toastTimer = null;
 
+  // The face marked as the user themselves (laptop demo), if any.
+  let wearerId = null;
+  // Ask which face is the user once we've heard their voice (or just learnt it), until they answer.
+  let meWanted = false;
+  let meDismissed = false;
+
   const personName = (faceId) => {
+    if (faceId && faceId === wearerId) return "You";
     const persona = personas.get(faceId);
     if (persona && (persona.nickname || (persona.names || [])[0])) return persona.nickname || persona.names[0];
     const match = /^person_(\d+)$/i.exec(faceId || "");
@@ -108,9 +115,13 @@
   function sendAudio(pcm) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     const ts = audioEpoch + sentSamples / TARGET_RATE;
-    socket.send(JSON.stringify({ type: "audio", ts, pcm: bytesToBase64(pcm) }));
+    const enrolling = Boolean(voiceTimer && voiceParts);
+    if (enrolling) voiceParts.push(pcm.slice());
+    // While learning the user's voice, stream silence instead, so the passage they read isn't transcribed
+    // and credited to whoever is in view (the audio clock keeps running).
+    const sent = enrolling ? new Uint8Array(pcm.length) : pcm;
+    socket.send(JSON.stringify({ type: "audio", ts, pcm: bytesToBase64(sent) }));
     sentSamples += pcm.length / 2;
-    if (voiceTimer && voiceParts) voiceParts.push(pcm.slice());
   }
 
   function processAudio(event) {
@@ -278,6 +289,40 @@
     const met = persona && persona.times_met ? `Talked ${persona.times_met} ${persona.times_met === 1 ? "time" : "times"}` : "";
     $("dialog-stats").textContent = met;
     $("dialog-forget").hidden = !card.hasPhoto;
+    $("dialog-me").textContent = faceId === wearerId ? "This isn’t me" : "This is me";
+  }
+
+  function updateMePrompt() {
+    const ask = meWanted && !wearerId && !meDismissed;
+    $("me-hint").hidden = !ask;
+    if (!ask) return;
+    $("me-yes").hidden = !focusedId;
+    $("me-hint-text").textContent = focusedId
+      ? `I can hear your voice. Is ${personName(focusedId)} (in the middle of the camera) you?`
+      : "I can hear your voice. If you’re on camera, look at it so I can tell which face is yours.";
+  }
+
+  async function setWearer(faceId) {
+    try {
+      const response = await fetch("/wearer", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ face_id: faceId }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      showWearer(faceId);
+      showToast(faceId ? "Got it, that’s you" : "Okay, that’s not you");
+    } catch {
+      showToast("Couldn’t save that, please try again");
+    }
+  }
+
+  function showWearer(faceId) {
+    wearerId = faceId || null;
+    updateMePrompt();
+    for (const id of cards.keys()) renderCardBody(id);
+    if (dialogFace && $("person-dialog").open) renderDetails();
+    updateSpecsHud();
   }
 
   // The server keeps the best photo it has seen and bumps the URL's version when it replaces it.
@@ -456,7 +501,10 @@
     const speaker = document.createElement("span");
     speaker.className = `transcript-speaker ${event.speaker === "self" ? "self" : background ? "background" : ""}`;
     speaker.textContent = event.speaker === "self" ? "You" : background ? "Nearby" : personName(event.face_id);
-    if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus" : "The person in focus wasn’t moving their lips";
+    if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus"
+      : event.reason === "voice_unknown" ? "Didn’t sound like the person in focus"
+      : event.reason === "not_in_view" ? "Not your voice, and no one else was in view"
+      : "The person in focus wasn’t moving their lips";
     const text = document.createElement("span");
     text.className = "transcript-text";
     text.textContent = event.text;
@@ -526,11 +574,16 @@
       for (const faceId of present) void admit(faceId);
       if (event.face_id && event.portrait_url) setCardPhoto(event.face_id, event.portrait_url);
       updateCards();
+      updateMePrompt();
       if (focusedId !== previousFocus) appendLog(focusedId ? `${personName(focusedId)} is here` : "Looking for a familiar face");
     } else if (event.type === "providers_changed") {
       showProviders(event);
     } else if (event.type === "transcript") {
+      // The user's own words only count once we know which face is theirs (laptop demo).
+      if (event.speaker === "self" && !wearerId) { meWanted = true; updateMePrompt(); }
       addTranscript(event);
+    } else if (event.type === "wearer_changed") {
+      showWearer(event.face_id);
     } else if (event.type === "persona_updated") {
       const before = new Set(factsOf(personas.get(event.face_id)));
       personas.set(event.face_id, event.persona);
@@ -619,6 +672,7 @@
       setStatus("On", "live");
       document.body.classList.add("live");
       appendLog("Camera is on");
+      void offerVoiceIfNeeded();
     } catch (error) {
       setStatus(error.message || "Could not start capture", "error");
       await stopCapture(false);
@@ -633,12 +687,7 @@
     present = new Set();
     focusedId = null;
     updateCards();
-    if (voiceTimer) {
-      clearTimeout(voiceTimer);
-      voiceTimer = null;
-      voiceParts = null;
-      $("voice").textContent = "Learn my voice";
-    }
+    closeVoiceDialog();
     if (processor) processor.disconnect();
     if (source) source.disconnect();
     if (mutedOutput) mutedOutput.disconnect();
@@ -661,30 +710,92 @@
     }
   }
 
-  async function enrollVoice() {
+  // "Learn my voice": a prompt with a passage to read; records VOICE_ENROLL_MS of the live mic audio.
+  const VOICE_ENROLL_MS = 10_000;
+  let voiceCountdown = null;
+  let voiceDone = false;
+  let voiceOffered = false;
+
+  function setVoiceStatus(text, kind = "") {
+    $("voice-status").textContent = text;
+    $("voice-status").className = kind;
+  }
+
+  function openVoiceDialog() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    voiceDone = false;
+    $("voice-go").textContent = "Start reading";
+    $("voice-go").disabled = false;
+    $("voice-progress").hidden = true;
+    setVoiceStatus("Takes about 10 seconds");
+    if (!$("voice-dialog").open) $("voice-dialog").showModal();
+  }
+
+  function cancelVoiceRecording() {
+    clearTimeout(voiceTimer);
+    clearInterval(voiceCountdown);
+    voiceTimer = voiceCountdown = null;
+    voiceParts = null;
+  }
+
+  function closeVoiceDialog() {
+    cancelVoiceRecording();
+    if ($("voice-dialog").open) $("voice-dialog").close();
+  }
+
+  function enrollVoice() {
+    if (voiceDone) return closeVoiceDialog();
+    if (!socket || socket.readyState !== WebSocket.OPEN || voiceTimer) return;
     voiceParts = [];
-    $("voice").disabled = true;
-    $("voice").textContent = "Listening… keep talking";
-    appendLog("Talk normally for about 10 seconds");
+    const started = performance.now();
+    $("voice-go").disabled = true;
+    $("voice-go").textContent = "Listening…";
+    $("voice-progress").hidden = false;
+    setVoiceStatus("Keep reading in your normal voice");
+    const tick = () => {
+      const left = Math.max(0, VOICE_ENROLL_MS - (performance.now() - started));
+      $("voice-bar-fill").style.width = `${100 - (left / VOICE_ENROLL_MS) * 100}%`;
+      $("voice-count").textContent = `${Math.ceil(left / 1000)}s`;
+    };
+    tick();
+    voiceCountdown = setInterval(tick, 250);
     voiceTimer = setTimeout(async () => {
-      voiceTimer = null;
-      const total = voiceParts.reduce((sum, part) => sum + part.length, 0);
+      clearInterval(voiceCountdown);
+      voiceTimer = voiceCountdown = null;
+      const parts = voiceParts || [];
+      voiceParts = null;
+      const total = parts.reduce((sum, part) => sum + part.length, 0);
       const audio = new Uint8Array(total);
       let offset = 0;
-      for (const part of voiceParts) { audio.set(part, offset); offset += part.length; }
-      voiceParts = null;
-      $("voice").textContent = "Learn my voice";
+      for (const part of parts) { audio.set(part, offset); offset += part.length; }
+      setVoiceStatus("Saving…");
       try {
         const response = await fetch("/self-voice", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: audio });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        voiceDone = true;
+        setVoiceStatus("Got it, I’ll know when it’s you talking", "ok");
+        $("voice-go").textContent = "Done";
+        // Laptop demo: the user faces the camera, so the people panel now asks which face is theirs.
+        meWanted = true;
+        meDismissed = false;
+        updateMePrompt();
         appendLog("Got it, I know your voice now");
       } catch (error) {
-        appendLog("Couldn’t learn your voice, please try again");
+        setVoiceStatus("Couldn’t hear enough. Try again somewhere quieter", "error");
+        $("voice-go").textContent = "Try again";
       } finally {
-        $("voice").disabled = !socket || socket.readyState !== WebSocket.OPEN;
+        $("voice-go").disabled = false;
       }
-    }, 10_000);
+    }, VOICE_ENROLL_MS);
+  }
+
+  async function offerVoiceIfNeeded() {
+    if (voiceOffered) return;
+    voiceOffered = true;
+    try {
+      const response = await fetch("/self-voice");
+      if (response.ok && !(await response.json()).enrolled) openVoiceDialog();
+    } catch {}
   }
 
   async function forgetPortrait(faceId) {
@@ -710,10 +821,17 @@
   $("consent").addEventListener("change", () => { $("start").disabled = !$("consent").checked || !!media; });
   $("start").addEventListener("click", beginCapture);
   $("stop").addEventListener("click", () => void stopCapture());
-  $("voice").addEventListener("click", enrollVoice);
+  $("voice").addEventListener("click", openVoiceDialog);
+  $("voice-go").addEventListener("click", enrollVoice);
+  $("voice-close").addEventListener("click", closeVoiceDialog);
+  $("voice-dialog").addEventListener("close", cancelVoiceRecording);
   setInterval(updateCards, 15000);
   $("dialog-close").addEventListener("click", () => $("person-dialog").close());
   $("dialog-forget").addEventListener("click", () => { if (dialogFace) void forgetPortrait(dialogFace); });
+  $("me-yes").addEventListener("click", () => { if (focusedId) void setWearer(focusedId); });
+  $("me-no").addEventListener("click", () => { meDismissed = true; updateMePrompt(); });
+  $("dialog-me").addEventListener("click", () => { if (dialogFace) void setWearer(dialogFace === wearerId ? null : dialogFace); });
+  fetch("/wearer").then((response) => response.json()).then((body) => showWearer(body.face_id)).catch(() => {});
   // Clicking the dimmed backdrop (outside the panel) closes the pop-up.
   $("person-dialog").addEventListener("click", (event) => { if (event.target === $("person-dialog")) $("person-dialog").close(); });
   $("person-dialog").addEventListener("close", () => { dialogFace = null; });

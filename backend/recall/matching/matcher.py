@@ -46,6 +46,7 @@ class ConversationMatcher:
         on_finalized: Callable[[Conversation], None],
         gate: Callable[[Utterance], Verdict] | None = None,
         max_utterance_s: float | None = None,
+        on_line: Callable[[], None] | None = None,
     ):
         self._db = db
         self._tracker = tracker
@@ -55,6 +56,7 @@ class ConversationMatcher:
         self._on_finalized = on_finalized
         self._gate = gate
         self._max_utterance_s = max_utterance_s
+        self._on_line = on_line
         self._open: Conversation | None = None
         self._closing: list[Conversation] = []
 
@@ -77,7 +79,10 @@ class ConversationMatcher:
             conv = self._start(self._tracker.face_at(utterance.start), utterance.start)
 
         face_id = None
-        if utterance.speaker == "other":
+        if utterance.speaker == "self":
+            # The user's own words go to their own card if they've marked which face is theirs.
+            face_id = self._db.get_wearer_face()
+        else:
             # Whose lips moved while it was said; else the face in focus for most of the line; else the
             # conversation's face.
             face_id = verdict.face_id or self._db.majority_face(utterance.start, utterance.end) or conv.face_id
@@ -86,6 +91,8 @@ class ConversationMatcher:
         )
         self._publish_transcript(utterance, utterance.speaker, face_id)
         conv.segment_count += 1
+        if face_id is not None and self._on_line is not None:
+            self._on_line()
         if conv is self._open:
             conv.last_speech_end = max(conv.last_speech_end, utterance.end)
 

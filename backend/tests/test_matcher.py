@@ -124,3 +124,15 @@ def test_self_session_is_never_sent_for_persona(env):
     assert events[0]["face_id"] is None
     assert events[1]["type"] == "transcript"
     assert finalized == []
+
+
+def test_each_stored_line_from_someone_else_notifies_the_persona_job():
+    db = Database(":memory:")
+    tracker = FocusedFaceTracker(confirm_windows=1, absent_confirm_windows=1)
+    tracker.observe(0.0, "alice")
+    lines: list[None] = []
+    matcher = ConversationMatcher(db, tracker, 1.0, 5.0, lambda _e: None, lambda _c: None, on_line=lambda: lines.append(None))
+    matcher.on_utterance(utterance(0.5, 2.0))
+    matcher.on_utterance(utterance(2.5, 3.0, speaker="self"))
+    matcher.on_utterance(utterance(3.5, 4.0))
+    assert len(lines) == 2

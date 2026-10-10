@@ -206,7 +206,9 @@ class InsightFaceRecognizer:
         if image is None:
             return []
         height, width = image.shape[:2]
-        bboxes, kpss = self._face_app.det_model.detect(image, max_num=0, metric="default")
+        # A smaller detector input (320 vs 640) is ~4x faster, which lets lip frames run at 10 fps; it
+        # still finds faces down to the `min_height` we keep.
+        bboxes, kpss = self._face_app.det_model.detect(image, max_num=0, metric="default", input_size=(320, 320))
         if bboxes is None:
             return []
         from insightface.app.common import Face

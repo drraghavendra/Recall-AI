@@ -135,3 +135,59 @@ def test_continuous_background_chatter_does_not_hold_a_conversation_open(env):
     assert matcher.open_conversation is None
     matcher.on_audio_time(40.0, in_speech=True)
     assert finalized == [conv]
+
+
+HOP = 0.05
+
+
+def syllables(seconds: float, rate_hz: float = 4.0, phase: float = 0.0):
+    """Loudness envelope (every HOP) of speech with `rate_hz` syllables, and a function giving the mouth
+    gap (px, on a 40px-wide mouth) in step with it."""
+    shape = lambda t: 0.5 + 0.5 * np.sin(2 * np.pi * rate_hz * t + phase)
+    envelope = tuple(0.02 + 0.1 * shape((i + 0.5) * HOP) for i in range(int(seconds / HOP)))
+    return envelope, lambda t: 1 + 12 * shape(t)
+
+
+def feed_fn(tracker, start, seconds, gap_at, face_id="alice", fps=10):
+    for i in range(int(seconds * fps)):
+        t = i / fps
+        tracker.observe(face_id, start + t, mouth_openness(face_with_mouth_open(gap_at(t))))
+
+
+def sync_tracker() -> LipActivityTracker:
+    return LipActivityTracker(min_openness_std=0.03, min_talking_fraction=0.4, min_sync=0.1)
+
+
+def test_mouth_moving_in_step_with_the_sound_is_talking():
+    tracker = sync_tracker()
+    envelope, gap = syllables(6.0, rate_hz=2.0)
+    feed_fn(tracker, 100.0, 6.0, gap)
+    assert tracker.face_talking("alice", 100.0, 106.0, envelope, HOP) is True
+
+
+def test_a_brief_reaction_during_someone_elses_long_speech_is_not_talking():
+    tracker = sync_tracker()
+    envelope, _ = syllables(6.0)
+    # Still mouth, except one second of a smile/"mm" (big openness change) in the middle.
+    feed_fn(tracker, 100.0, 6.0, lambda t: 12.0 if 2.0 <= t < 2.5 else 2.0)
+    assert tracker.face_talking("alice", 100.0, 106.0, envelope, HOP) is False
+    # The old whole-line check would have called this talking.
+    assert tracker._spread("alice", 100.0, 106.0, 0.3) >= 0.03
+
+
+def test_a_mouth_moving_out_of_step_with_the_sound_is_not_talking():
+    tracker = sync_tracker()
+    envelope, _ = syllables(6.0, rate_hz=2.0)
+    # Moving all the time (e.g. chewing), but at a different rhythm from the speech we hear.
+    _, chewing = syllables(6.0, rate_hz=0.7, phase=1.0)
+    feed_fn(tracker, 100.0, 6.0, chewing)
+    assert tracker.face_talking("alice", 100.0, 106.0, envelope, HOP) is False
+
+
+def test_the_gate_uses_the_utterance_envelope():
+    tracker = sync_tracker()
+    envelope, _ = syllables(6.0)
+    feed_fn(tracker, 100.0, 6.0, lambda t: 12.0 if 2.0 <= t < 2.5 else 2.0)
+    gate = AttributionGate(None, tracker, focused_during=lambda s, e: "alice")
+    line = Utterance(100.0, 106.0, "someone off camera", "other", envelope=envelope)
+    assert gate(line) == Verdict(reason="lips_still")

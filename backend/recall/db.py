@@ -48,6 +48,20 @@ CREATE TABLE IF NOT EXISTS profiles (
     last_segment_id INTEGER NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL
 );
+-- Voice embeddings of lines credited to each face, to build that person's voiceprint.
+CREATE TABLE IF NOT EXISTS voice_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    face_id TEXT NOT NULL,
+    embedding BLOB NOT NULL,
+    seconds REAL NOT NULL,
+    ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voice_samples_face ON voice_samples(face_id, id);
+-- Which face is the user themselves (e.g. the laptop demo, where the user faces the camera).
+CREATE TABLE IF NOT EXISTS wearer (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    face_id TEXT
+);
 CREATE TABLE IF NOT EXISTS self_voice (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     embedding BLOB NOT NULL,
@@ -178,11 +192,12 @@ class Database:
         return None if row is None else row["focused_face_id"]
 
     def pending_lines(self) -> dict[str, list[Segment]]:
-        """Other people's transcript lines not yet sent to Claude, grouped by face (the face <> transcript map)."""
+        """Transcript lines credited to a face and not yet sent to Claude, grouped by face (the face <>
+        transcript map). That's other people's lines, plus the user's own when their face is marked."""
         rows = self._conn.execute(
             "SELECT s.id, s.face_id, s.ts_start, s.ts_end, s.text FROM transcript_segments s "
             "LEFT JOIN profiles p ON p.face_id = s.face_id "
-            "WHERE s.speaker = 'other' AND s.face_id IS NOT NULL AND s.id > COALESCE(p.last_segment_id, 0) "
+            "WHERE s.face_id IS NOT NULL AND s.id > COALESCE(p.last_segment_id, 0) "
             "ORDER BY s.id"
         ).fetchall()
         lines: dict[str, list[Segment]] = {}
@@ -212,6 +227,42 @@ class Database:
             "updated_at = CASE WHEN excluded.persona IS NULL THEN profiles.updated_at ELSE excluded.updated_at END",
             (face_id, None if persona is None else json.dumps(persona), last_segment_id, time.time()),
         )
+
+    def add_voice_sample(self, face_id: str, embedding: bytes, seconds: float, keep: int) -> None:
+        """Store a voice sample for `face_id`, keeping only its `keep` most recent."""
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO voice_samples (face_id, embedding, seconds, ts) VALUES (?, ?, ?, ?)",
+                (face_id, embedding, seconds, time.time()),
+            )
+            self._conn.execute(
+                "DELETE FROM voice_samples WHERE face_id = ? AND id NOT IN "
+                "(SELECT id FROM voice_samples WHERE face_id = ? ORDER BY id DESC LIMIT ?)",
+                (face_id, face_id, keep),
+            )
+
+    def voice_samples(self) -> dict[str, list[bytes]]:
+        samples: dict[str, list[bytes]] = {}
+        for row in self._conn.execute("SELECT face_id, embedding FROM voice_samples ORDER BY id"):
+            samples.setdefault(row["face_id"], []).append(row["embedding"])
+        return samples
+
+    def get_wearer_face(self) -> str | None:
+        row = self._conn.execute("SELECT face_id FROM wearer WHERE id = 1").fetchone()
+        return None if row is None else row["face_id"]
+
+    def set_wearer_face(self, face_id: str | None) -> None:
+        self._execute(
+            "INSERT INTO wearer (id, face_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET face_id = excluded.face_id",
+            (face_id,),
+        )
+
+    def credit_self_lines(self, face_id: str) -> int:
+        """Give the user's own lines that weren't linked to any face to `face_id` (their face, just marked)."""
+        cursor = self._execute(
+            "UPDATE transcript_segments SET face_id = ? WHERE speaker = 'self' AND face_id IS NULL", (face_id,)
+        )
+        return cursor.rowcount
 
     def get_self_voice(self) -> bytes | None:
         row = self._conn.execute("SELECT embedding FROM self_voice WHERE id = 1").fetchone()

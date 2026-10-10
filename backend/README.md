@@ -2,7 +2,7 @@
 
 One FastAPI process implementing [DESIGN.md](../DESIGN.md): an always-on **read path**
 (frames → faceId → persona) and a **write path** (speech → transcript lines tagged with the face in
-focus → a persona job every `RECALL_PERSONA_CYCLE_S`, default 90s). Face recognition is selected with
+focus → a persona job `RECALL_PERSONA_BATCH_S` after new lines, default 30s, even mid-conversation). Face recognition is selected with
 `RECALL_FACE_BACKEND`: AWS Rekognition (default), local InsightFace, or Mock. The persona LLM is
 Claude; VAD, transcription and the self/other voice check run locally.
 
@@ -141,7 +141,7 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
 | `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
 | `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper, Parakeet or Sarvam) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `sarvam.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
-| `persona/` | One background job: every cycle, new lines grouped by face → Claude decides whether they add anything (structured output with a `changed` flag) → save and push only real changes. Each face's bookmark advances only after a successful call | `PersonaWriter` |
+| `persona/` | One background job: 30 s after new lines (even mid-conversation) or when a conversation ends, new lines grouped by face → Claude decides whether they add anything (structured output with a `changed` flag) → save and push only real changes. Each face's bookmark advances only after a successful call | `PersonaWriter` |
 | `db.py` | SQLite schema + queries | — |
 | `wiring.py` | Builds and starts everything; the only place concrete classes are chosen | — |
 
@@ -157,11 +157,18 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
 - **The persona model is `claude-sonnet-5-5` at low effort**, updated about once a minute mid-conversation, with server-side refusal
   fallbacks enabled (`fallbacks="default"`). Override with `RECALL_ANTHROPIC_MODEL` /
   `RECALL_PERSONA_EFFORT`.
-- **Someone else's speech is only attributed to the focused face if it passes two checks**: it is
-  louder than `RECALL_MIN_OTHER_SPEECH_DBFS` (off by default, since the browser normalises loudness), and (InsightFace only) the face's mouth opened and closed while
-  it was spoken. The browser client sends ~5 fps `lip_frames` while it hears sound for the second
-  check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
+- **Someone else's speech goes to the focused face.** Two optional checks can mark it background
+  instead: it is quieter than `RECALL_MIN_OTHER_SPEECH_DBFS` (off by default, since the browser
+  normalises loudness), or, with `RECALL_LIP_CHECK=true` (off by default; InsightFace only), the face's mouth wasn't moving for
+  much of the time there was sound (scored in 1 s slices; lip/sound sync is logged, and can be
+  required with `RECALL_LIP_MIN_SYNC`). The
+  browser client sends ~10 fps `lip_frames` while it hears sound for the second check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
   are heuristics; tune them with the per-utterance `level` and `lip check` log lines.
+- **Speaker identity** (`RECALL_VOICE_ID`, on by default): each face learns a voiceprint from the
+  lines credited to it (Resemblyzer embeddings, outliers dropped). Once it has 3 lines of 1 s or more,
+  a line said while that face is in focus is background if it doesn't sound like them
+  (`RECALL_VOICE_SAME_THRESHOLD`), and is credited to another known face if it clearly sounds like
+  them (`RECALL_VOICE_OTHER_THRESHOLD`). Tune with the per-line `voice check` log.
 - **The focused face** (`RECALL_FOCUS_RULE`) is the one nearest the centre of the frame, among faces
   at least half as tall as the largest — on glasses, the person you're looking at. It is the face
   that gets enrolled, photographed and credited with other people's speech (InsightFace only;

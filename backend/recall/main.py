@@ -9,7 +9,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from recall.audio.pcm import pcm16_to_float
 from recall.config import Settings
@@ -49,7 +49,12 @@ def _services(holder: Request | WebSocket) -> Services:
 @app.get("/health")
 async def health(request: Request) -> dict:
     services = _services(request)
-    return {"status": "ok", **services.providers.current, "lip_check": services.lips is not None}
+    return {
+        "status": "ok",
+        **services.providers.current,
+        "lip_check": services.lips is not None,
+        "voice_id": services.voices is not None,
+    }
 
 
 @app.get("/providers")
@@ -89,6 +94,31 @@ async def get_face_portrait(face_id: str, request: Request) -> Response:
 async def delete_face_portrait(face_id: str, request: Request) -> None:
     if not _services(request).db.delete_face_portrait(face_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no saved portrait for this face")
+
+
+class WearerChoice(BaseModel):
+    face_id: str | None
+
+
+@app.get("/wearer")
+async def get_wearer(request: Request) -> dict:
+    """Which face is the user themselves (laptop demo: the user faces the camera), if marked."""
+    return {"face_id": _services(request).db.get_wearer_face()}
+
+
+@app.put("/wearer")
+async def set_wearer(choice: WearerChoice, request: Request) -> dict:
+    services = _services(request)
+    services.db.set_wearer_face(choice.face_id)
+    if choice.face_id is not None and services.db.credit_self_lines(choice.face_id):
+        services.persona.request_run()  # what the user already said now counts for their card
+    services.hub.publish({"type": "wearer_changed", "face_id": choice.face_id})
+    return {"face_id": choice.face_id}
+
+
+@app.get("/self-voice")
+async def self_voice_status(request: Request) -> dict:
+    return {"enrolled": _services(request).db.get_self_voice() is not None}
 
 
 @app.post("/self-voice", status_code=status.HTTP_204_NO_CONTENT)

@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     vad_threshold: float = 0.5
     vad_min_silence_ms: int = 600
     vad_speech_pad_ms: int = 100
-    max_utterance_s: float = 15.0
+    # Long speech is cut into pieces this long, so each piece is transcribed, lip-checked and shown sooner.
+    max_utterance_s: float = 6.0
 
     # Speech-to-text provider selected by the transcriber factory. Whisper and Parakeet run locally;
     # Sarvam is a paid API (key from SARVAM_API_KEY in the environment, like the other SDK credentials).
@@ -62,17 +63,37 @@ class Settings(BaseSettings):
     # Off by default: the browser's auto gain (needed so quiet mics give usable speech) makes loudness a
     # poor near/far signal. Set it (e.g. -50) only for clients that send un-normalised audio.
     min_other_speech_dbfs: float | None = None
-    # Lip check (InsightFace only): the client sends ~5 fps lip frames while it hears sound. Speech during
-    # which the focused face's mouth openness (inner-lip gap / mouth width) barely varied is background.
-    lip_check: bool = True
+    # Lip check (InsightFace only), off unless RECALL_LIP_CHECK=true: still too unreliable on real
+    # recordings, so by default speech simply goes to the focused face. When on, the client sends ~10 fps
+    # lip frames while it hears sound. A line is the
+    # focused face's only if its mouth openness (inner-lip gap / mouth width) varied by at least
+    # `lip_min_openness_std` in `lip_min_talking_fraction` of the 1 s slices with sound, and (when there are
+    # enough frames, and if `lip_min_sync` is set) rose and fell in step with the loudness. Otherwise it's
+    # background. Every line logs both numbers ("lip check ...") for tuning.
+    lip_check: bool = False
     # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
     # True: speech goes to whichever face's mouth moved most.
     lip_picks_speaker: bool = False
+    # Speaker identity: each face gets a voiceprint learnt from the lines credited to it (after
+    # `voice_min_samples` lines of at least `voice_min_seconds`). Then a line whose voice scores below
+    # `voice_same_threshold` against the focused face is background, and one scoring at least
+    # `voice_other_threshold` against another known face is credited to them. Each line logs
+    # "voice check ..." scores for tuning.
+    voice_id: bool = True
+    voice_same_threshold: float = 0.65
+    voice_other_threshold: float = 0.75
+    voice_min_samples: int = 3
+    voice_min_seconds: float = 1.0
     lip_min_openness_std: float = 0.02
+    lip_min_talking_fraction: float = 0.3
+    # Off by default (None): on real recordings the sync score was too noisy to reject on; it's still logged.
+    lip_min_sync: float | None = None
 
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
-    # Sonnet is plenty for a short profile and faster than Opus. The persona job runs every
-    # `persona_cycle_s` after the previous run finished, plus once whenever a conversation ends.
+    # Sonnet is plenty for a short profile and faster than Opus. The persona job runs `persona_batch_s`
+    # after the first unsent line (so mid-conversation too), right away when a conversation ends, and
+    # every `persona_cycle_s` as a safety net that retries failed calls.
     anthropic_model: str = "claude-sonnet-5-5"
     persona_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
     persona_cycle_s: float = 90.0
+    persona_batch_s: float = 30.0
