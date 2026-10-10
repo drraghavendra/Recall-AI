@@ -40,20 +40,12 @@
         </section>
 
         <aside class="right-rail">
-          <section class="identity-panel glass">
-            <div class="panel-head"><div><span class="kicker">Talking with</span><h2>Who this is</h2></div><span id="match-status" class="match-status">Waiting</span></div>
-            <div class="identity-card">
-              <div class="portrait-lens">
-                <img id="portrait" alt="Photo of the person you are with" hidden />
-                <div id="portrait-placeholder" class="portrait-placeholder"><div class="lens-ring"><span></span></div></div>
-                <div class="lens-glint" aria-hidden="true"></div>
-                <span id="portrait-state" class="portrait-state"></span>
-              </div>
-              <div class="identity-meta"><div id="face-name" class="face-name">No one yet</div><div class="identity-id"><span class="id-dot"></span><span id="face-id"></span><span id="confidence"></span></div><div id="listening" class="listening" hidden><span class="listening-dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="listening-text"></span></div></div>
+          <section class="people-panel glass">
+            <div class="panel-head"><div><span class="kicker">People</span><h2>Who you’re with</h2></div><span id="people-count" class="match-status">No one yet</span></div>
+            <div id="people" class="people">
+              <div id="people-empty" class="people-empty"><div class="lens-ring"></div><p>When someone familiar is with you, what you know about them will show here.</p></div>
             </div>
-            <div class="memory-card"><div class="memory-label"><span>What you know about them</span><span id="memory-state"></span></div><div id="heard" class="heard" hidden><div class="heard-title">Just learned</div><ul id="heard-list"></ul></div><div id="persona" class="persona"><p>When someone familiar is with you, what you know about them will show here.</p></div></div>
-            <button id="forget-portrait" class="forget-button" disabled>Forget this photo</button>
-            <div id="others" class="others" hidden><div class="memory-label"><span>Also here</span><span id="others-count"></span></div><div id="others-list" class="others-list"></div></div>
+            <div id="waiting" class="waiting" hidden></div>
           </section>
 
           <details class="transcript-panel glass">

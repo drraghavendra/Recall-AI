@@ -214,3 +214,41 @@ details.transcript-panel > summary::-webkit-details-marker { display: none; }
 details.transcript-panel[open] > summary { margin-bottom: 14px; }
 details.transcript-panel[open] .kicker { font-size: 0; }
 details.transcript-panel[open] .kicker:before { content: "Conversation · tap to hide"; font-size: 14px; }
+
+/* People cards */
+.people-panel { padding: 20px; }
+.people { display: grid; gap: 14px; }
+.people-empty { display: grid; justify-items: center; gap: 30px; padding: 22px 12px 8px; text-align: center; color: var(--muted); font-size: 17px; }
+.people-empty p { margin: 0; max-width: 300px; }
+.person-card { padding: 16px; border-radius: 18px; background: var(--surface-soft); border: 2px solid transparent; transition: border-color .3s, opacity .3s; animation: line-in .35s ease-out both; }
+.person-card.focused { border-color: var(--sage); background: var(--surface); box-shadow: var(--shadow); }
+.person-card.away { opacity: .78; }
+.person-card.away .card-groups, .person-card.away .heard { display: none; }
+.card-top { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; align-items: center; }
+.avatar { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: #e8dac6; border: 3px solid var(--surface); box-shadow: 0 0 0 2px var(--line); }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.avatar-placeholder { position: absolute; left: 50%; top: 12px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: #d6c3aa; box-shadow: 0 26px 0 8px #d6c3aa; }
+.card-name { font: 600 25px/1.15 var(--serif); overflow-wrap: anywhere; }
+.card-relation { color: var(--muted); font-size: 16px; text-transform: capitalize; }
+.card-relation:empty { display: none; }
+.presence { display: flex; align-items: center; gap: 7px; margin-top: 3px; font-size: 15px; font-weight: 700; }
+.presence i { width: 10px; height: 10px; border-radius: 50%; }
+.here .presence { color: var(--sage); }
+.here .presence i { background: #5f9b4c; box-shadow: 0 0 0 3px #dcebd3; }
+.away .presence { color: var(--rose); }
+.away .presence i { background: #c0574a; box-shadow: 0 0 0 3px #f3dcd7; }
+.card-body { margin-top: 12px; font-size: 18px; line-height: 1.5; }
+.card-body p { margin: 0 0 8px; }
+.card-summary { color: var(--text); }
+.card-last { color: var(--muted); font-size: 17px; }
+.card-last strong { color: var(--clay-dark); }
+.card-muted { color: var(--faint); }
+.card-groups { display: grid; gap: 8px; margin-top: 4px; }
+.card-group-label { color: var(--clay-dark); font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.card-group ul { margin: 2px 0 0; padding-left: 20px; }
+.card-group li { margin: 2px 0; }
+.card-group li::marker { color: var(--clay); }
+.card-group li.fresh { background: var(--sage-soft); border-radius: 6px; padding: 0 6px; margin-left: -6px; }
+.person-card .listening { margin-top: 10px; }
+.person-card .forget-button { margin-top: 4px; padding: 2px 0; }
+.waiting { margin-top: 12px; padding: 10px 14px; border-radius: 12px; color: var(--muted); background: var(--surface-soft); border: 1px dashed var(--line); font-size: 15px; }

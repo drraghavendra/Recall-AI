@@ -1,8 +1,8 @@
 # Recall-AI backend
 
 One FastAPI process implementing [DESIGN.md](../DESIGN.md): an always-on **read path**
-(frames → faceId → persona) and a VAD-triggered **write path** (speech → conversation →
-transcript ↔ face matching → persona update). Face recognition is selected with
+(frames → faceId → persona) and a **write path** (speech → transcript lines tagged with the face in
+focus → a persona job every `RECALL_PERSONA_CYCLE_S`, default 90s). Face recognition is selected with
 `RECALL_FACE_BACKEND`: AWS Rekognition (default), local InsightFace, or Mock. The persona LLM is
 Claude; VAD, transcription and the self/other voice check run locally.
 
@@ -75,7 +75,7 @@ ffmpeg -f avfoundation -i ":0" -t 10 -ar 16000 -ac 1 -f s16le me.pcm
 curl --data-binary @me.pcm -H "Content-Type: application/octet-stream" localhost:8000/self-voice
 ```
 
-Tests cover the pure logic (tracker, conversation lifecycle, persona watermark) and make no
+Tests cover the pure logic (trackers, conversation lifecycle, persona job, attribution) and make no
 AWS/Claude calls. They don't need the heavy `[ml]` extra (torch, Whisper, Resemblyzer):
 
 ```bash
@@ -120,14 +120,19 @@ Send one `frames` message per sampling window (client default: 1 frame / 1s, set
 `--window` / `--frames`) and audio continuously
 with no gaps, using the same clock (`time.time()`) for both `ts`.
 
-**Server → client**: `face_update {ts, face_id, is_new, confidence, portrait_url}`,
+**Server → client**: `face_update {ts, face_id, is_new, confidence, portrait_url, others, focused,
+present}` — `face_id`/`others` are this frame's raw matches; `focused` and `present` are debounced
+(2 frames to appear, 3 to disappear) and are what a UI should render from,
 `conversation_started` / `conversation_ended {conv_id, face_id, ts}`,
 `transcript {ts, end_ts, text, speaker, face_id}`,
-`persona_updated {face_id, persona}`.
+`persona_updated {face_id, persona}` (only when Claude actually added something).
 
-Client read-path rule: on `face_update`, fetch `/persona/{face_id}` only when the face
-changed; refetch on `persona_updated` for the face on screen, plus a 3–4 min cache TTL as
-a safety net.
+Personas are structured: `names`, `nickname`, `relation`, fact groups `work` / `family` /
+`interests` / `plans` / `other`, `last_talked_about`, `summary`, plus `times_met` and `last_seen`
+from our own records. `key_facts` (all groups flattened) is kept for older clients.
+
+Client read-path rule: fetch `/persona/{face_id}` when a face first appears; after that, apply
+`persona_updated` pushes, plus a 3–4 min cache TTL as a safety net.
 
 ## Layout
 
@@ -136,7 +141,7 @@ a safety net.
 | `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
 | `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper, Parakeet or Sarvam) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `sarvam.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
-| `persona/` | Watermarked incremental updates via Claude structured output | `PersonaWriter` |
+| `persona/` | One background job: every cycle, new lines grouped by face → Claude decides whether they add anything (structured output with a `changed` flag) → save and push only real changes. Each face's bookmark advances only after a successful call | `PersonaWriter` |
 | `db.py` | SQLite schema + queries | — |
 | `wiring.py` | Builds and starts everything; the only place concrete classes are chosen | — |
 

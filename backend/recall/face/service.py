@@ -6,7 +6,7 @@ from recall.db import Database
 from recall.events import Publish
 from recall.face.frames import select_sharpest
 from recall.face.recognizer import FaceRecognizer, SearchResult
-from recall.face.tracker import FocusedFaceTracker
+from recall.face.tracker import FocusedFaceTracker, PresenceTracker
 
 log = logging.getLogger(__name__)
 
@@ -22,12 +22,14 @@ class FaceService:
         publish: Publish,
         frames_per_window: int,
         max_pending_windows: int = 2,
+        presence: PresenceTracker | None = None,
     ):
         self._recognizer = recognizer
         self._tracker = tracker
         self._db = db
         self._publish = publish
         self._frames_per_window = frames_per_window
+        self._presence = presence or PresenceTracker(confirm_windows=2, absent_windows=3)
         self._queue: asyncio.Queue[tuple[float, list[bytes], bool]] = asyncio.Queue(maxsize=max_pending_windows)
 
     def set_recognizer(self, recognizer: FaceRecognizer) -> None:
@@ -59,6 +61,8 @@ class FaceService:
 
         self._db.insert_face_sample(ts, face_id, confidence)
         self._tracker.observe(ts, face_id)
+        seen = {other["face_id"] for other in others} | ({face_id} if face_id else set())
+        self._presence.observe(seen)
         self._publish(
             {
                 "type": "face_update",
@@ -68,6 +72,9 @@ class FaceService:
                 "confidence": confidence,
                 "portrait_url": f"/faces/{face_id}/portrait" if face_id and self._db.get_face_portrait(face_id) else None,
                 "others": [other for other in others if other["face_id"] != face_id],
+                # Debounced views for the UI: one bad frame doesn't change these.
+                "focused": self._tracker.current,
+                "present": sorted(self._presence.present),
             }
         )
 

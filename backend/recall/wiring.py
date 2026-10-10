@@ -18,7 +18,7 @@ from recall.face.mock import MockRecognizer
 from recall.face.recognizer import FaceRecognizer
 from recall.face.rekognition import RekognitionRecognizer
 from recall.face.service import FaceService
-from recall.face.tracker import FocusedFaceTracker
+from recall.face.tracker import FocusedFaceTracker, PresenceTracker
 from recall.matching.attribution import AttributionGate
 from recall.matching.matcher import ConversationMatcher
 from recall.persona.llm import ClaudePersonaWriter
@@ -47,9 +47,7 @@ class Services:
         self._tasks = [
             asyncio.create_task(self.face.run(), name="face"),
             asyncio.create_task(self.audio.run(), name="audio"),
-            asyncio.create_task(
-                self.persona.checkpoint_loop(lambda: self.matcher.open_conversation), name="persona-checkpoints"
-            ),
+            asyncio.create_task(self.persona.run(), name="persona-cycle"),
         ]
         if self.lips is not None:
             self._tasks.append(asyncio.create_task(self.lips.run(), name="lips"))
@@ -124,7 +122,8 @@ def build_services(settings: Settings) -> Services:
     tracker = FocusedFaceTracker(settings.face_confirm_windows, settings.face_absent_confirm_windows)
 
     recognizer = _build_recognizer(settings)
-    face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window)
+    presence = PresenceTracker(settings.face_confirm_windows, settings.face_absent_confirm_windows)
+    face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window, presence=presence)
 
     lips = None
     mouth_landmarks = getattr(recognizer, "mouth_landmarks", None)
@@ -135,8 +134,7 @@ def build_services(settings: Settings) -> Services:
         db,
         hub.publish,
         ClaudePersonaWriter(settings.anthropic_model, settings.persona_effort),
-        settings.persona_update_interval_s,
-        settings.persona_min_new_segments,
+        settings.persona_cycle_s,
     )
     matcher = ConversationMatcher(
         db,
@@ -144,7 +142,7 @@ def build_services(settings: Settings) -> Services:
         settings.min_speech_duration_s,
         settings.min_silence_duration_s,
         hub.publish,
-        persona.on_conversation_finalized,
+        lambda _conv: persona.request_run(),  # a conversation just ended: don't wait for the cycle
         gate=AttributionGate(settings.min_other_speech_dbfs, None if lips is None else lips.tracker),
         max_utterance_s=settings.max_utterance_s,
     )

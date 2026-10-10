@@ -7,7 +7,9 @@
   const LIP_PERIOD_MS = 200;
   const LIP_HOLD_MS = 1500;
   const LIP_SOUND_RMS = 0.01;
-  const OTHER_FACE_TTL_MS = 4000;
+  // People cards: at most this many; a newcomer replaces someone only once we know something about them.
+  const MAX_CARDS = 3;
+  const LISTENING_CLEAR_MS = 150_000;
   const $ = (id) => document.getElementById(id);
 
   const video = $("video");
@@ -18,12 +20,13 @@
   let lipCheck = false;
   let lipTimer = null;
   let lipUntil = 0;
-  const others = new Map();
-  // "You're being heard": facts already on screen for the focused person, so updates can highlight what's new.
-  let shownFacts = new Set();
-  let heardCount = 0;
-  let heardTimer = null;
-  let listeningTimer = null;
+  // faceId -> { el, lastSeen, heard, listeningTimer, heardTimer, hasPhoto }, in on-screen slot order.
+  let cards = new Map();
+  // faceId -> persona, or null when we have none yet; missing = not fetched.
+  const personas = new Map();
+  const admitting = new Set();
+  let present = new Set();
+  let focusedId = null;
   let media = null;
   let socket = null;
   let audioContext = null;
@@ -34,15 +37,14 @@
   let pendingAudio = new Float32Array(0);
   let audioEpoch = 0;
   let sentSamples = 0;
-  let currentFaceId = null;
-  let lastPortraitUrl = null;
-  let portraitRequest = 0;
   let voiceParts = [];
   let voiceTimer = null;
   let transcriptCount = 0;
   let toastTimer = null;
 
   const personName = (faceId) => {
+    const persona = personas.get(faceId);
+    if (persona && (persona.nickname || (persona.names || [])[0])) return persona.nickname || persona.names[0];
     const match = /^person_(\d+)$/i.exec(faceId || "");
     return match ? `Person ${Number(match[1])}` : faceId ? `Person ${faceId.slice(0, 8)}` : "No one yet";
   };
@@ -160,177 +162,187 @@
     socket.send(JSON.stringify({ type: "frames", ts: Date.now() / 1000, frames: [jpeg], store_portrait: $("consent").checked }));
   }
 
-  async function fetchPersona(faceId) {
-    const request = ++portraitRequest;
-    $("memory-state").textContent = "Remembering…";
+  const GROUPS = [["work", "Work"], ["family", "Family"], ["interests", "Likes"], ["plans", "Coming up"], ["other", "Also"]];
+  const factsOf = (persona) => (persona ? GROUPS.flatMap(([key]) => persona[key] || []) : []);
+  const goodPersona = (persona) => Boolean(persona && ((persona.names || []).length || factsOf(persona).length));
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const personaRequests = new Map();
+
+  async function loadPersona(faceId) {
+    if (personas.has(faceId)) return personas.get(faceId);
+    if (!personaRequests.has(faceId)) {
+      personaRequests.set(faceId, (async () => {
+        try {
+          const response = await fetch(`/persona/${encodeURIComponent(faceId)}`);
+          const persona = response.ok ? await response.json() : null;
+          // A persona_updated push may have arrived while this was in flight; it's newer, so keep it.
+          if (!personas.has(faceId)) personas.set(faceId, persona);
+        } catch {
+          // Leave it unset so the next face update tries again.
+        } finally {
+          personaRequests.delete(faceId);
+        }
+      })());
+    }
+    await personaRequests.get(faceId);
+    return personas.get(faceId) ?? null;
+  }
+
+  function seenText(card, faceId) {
+    if (present.has(faceId)) return "Here now";
+    const minutes = Math.round((performance.now() - card.lastSeen) / 60000);
+    return minutes < 1 ? "Seen just now" : minutes === 1 ? "Seen a minute ago" : `Seen ${minutes} minutes ago`;
+  }
+
+  function renderCardBody(faceId, fresh = []) {
+    const card = cards.get(faceId);
+    if (!card) return;
+    const persona = personas.get(faceId);
+    card.el.querySelector(".card-name").textContent = personName(faceId);
+    const relation = persona && persona.relation && persona.relation !== "unknown" ? persona.relation : "";
+    card.el.querySelector(".card-relation").textContent = relation;
+    const body = card.el.querySelector(".card-body");
+    body.replaceChildren();
+    if (persona === undefined) {
+      body.append(el("p", "card-muted", "Remembering…"));
+      return;
+    }
+    if (!goodPersona(persona)) {
+      body.append(el("p", "first-meeting", "Meeting for the first time."));
+      return;
+    }
+    if (persona.summary) body.append(el("p", "card-summary", persona.summary));
+    if (persona.last_talked_about) {
+      const last = el("p", "card-last");
+      last.append(el("strong", "", "Last time: "), document.createTextNode(persona.last_talked_about));
+      body.append(last);
+    }
+    const groups = el("div", "card-groups");
+    for (const [key, label] of GROUPS) {
+      const facts = persona[key] || [];
+      if (!facts.length) continue;
+      const group = el("div", "card-group");
+      group.append(el("div", "card-group-label", label));
+      const list = el("ul");
+      for (const fact of facts) list.append(el("li", fresh.includes(fact) ? "fresh" : "", fact));
+      group.append(list);
+      groups.append(group);
+    }
+    body.append(groups);
+  }
+
+  function setCardPhoto(faceId) {
+    const card = cards.get(faceId);
+    if (!card || card.hasPhoto) return;
+    const image = card.el.querySelector("img");
+    image.onload = () => { image.hidden = false; card.hasPhoto = true; card.el.querySelector(".forget-button").hidden = false; };
+    image.onerror = () => { image.hidden = true; };
+    image.src = `/faces/${encodeURIComponent(faceId)}/portrait?v=${Date.now()}`;
+  }
+
+  function buildCard(faceId) {
+    const card = el("article", "person-card");
+    const top = el("div", "card-top");
+    const avatar = el("div", "avatar");
+    const image = el("img");
+    image.alt = "";
+    image.hidden = true;
+    avatar.append(el("div", "avatar-placeholder"), image);
+    const id = el("div", "card-id");
+    const presence = el("div", "presence");
+    presence.append(el("i"), el("span", "presence-text"));
+    id.append(el("div", "card-name"), el("div", "card-relation"), presence);
+    top.append(avatar, id);
+    const listening = el("div", "listening");
+    listening.hidden = true;
+    const dots = el("span", "listening-dots");
+    dots.append(el("i"), el("i"), el("i"));
+    listening.append(dots, el("span", "listening-text"));
+    const heard = el("div", "heard");
+    heard.hidden = true;
+    heard.append(el("div", "heard-title", "Just learned"), el("ul"));
+    const forget = el("button", "forget-button", "Forget this photo");
+    forget.hidden = true;
+    forget.addEventListener("click", () => void forgetPortrait(faceId));
+    card.append(top, listening, heard, el("div", "card-body"), forget);
+    return card;
+  }
+
+  function addCard(faceId, replacing = null) {
+    const entry = { el: buildCard(faceId), lastSeen: performance.now(), heard: 0, hasPhoto: false };
+    if (replacing && cards.has(replacing)) {
+      // Keep the slot position so the other cards don't move.
+      cards.get(replacing).el.replaceWith(entry.el);
+      cards = new Map([...cards].map(([id, card]) => (id === replacing ? [faceId, entry] : [id, card])));
+    } else {
+      $("people").append(entry.el);
+      cards.set(faceId, entry);
+    }
+    renderCardBody(faceId);
+    setCardPhoto(faceId);
+    void loadPersona(faceId).then(() => renderCardBody(faceId));
+    showToast(`${personName(faceId)} is here`);
+  }
+
+  async function admit(faceId) {
+    if (cards.has(faceId) || admitting.has(faceId)) return;
+    if (cards.size < MAX_CARDS) return addCard(faceId);
+    admitting.add(faceId);
     try {
-      const response = await fetch(`/persona/${encodeURIComponent(faceId)}`);
-      if (request !== portraitRequest || faceId !== currentFaceId) return;
-      if (response.status === 404) {
-        const root = $("persona");
-        root.replaceChildren();
-        const first = document.createElement("p");
-        first.className = "first-meeting";
-        first.textContent = "Meeting for the first time.";
-        root.append(first);
-        $("memory-state").textContent = "First meeting";
-        return;
-      }
-      if (!response.ok) throw new Error(`Memory request returned ${response.status}`);
-      const persona = await response.json();
-      renderPersona(persona);
-      shownFacts = new Set(persona.key_facts || []);
-      $("memory-state").textContent = "";
-    } catch (error) {
-      if (request === portraitRequest) {
-        $("persona").textContent = "Couldn’t remember right now.";
-        $("memory-state").textContent = "Unavailable";
-      }
+      const persona = await loadPersona(faceId);
+      if (cards.has(faceId) || !present.has(faceId) || !goodPersona(persona)) return;
+      const away = [...cards].filter(([id]) => !present.has(id)).sort((a, b) => a[1].lastSeen - b[1].lastSeen);
+      if (away.length) addCard(faceId, away[0][0]);
+    } finally {
+      admitting.delete(faceId);
+      updateCards();
     }
   }
 
-  function renderPersona(persona, fresh = []) {
-    const root = $("persona");
-    root.replaceChildren();
-    const facts = persona.key_facts || [];
-    if (facts.length) {
-      const list = document.createElement("ul");
-      for (const fact of facts) {
-        const item = document.createElement("li");
-        item.textContent = fact;
-        if (fresh.includes(fact)) item.className = "fresh";
-        list.append(item);
-      }
-      root.append(list);
-    }
-    if (persona.summary) {
-      const summary = document.createElement("p");
-      summary.className = "summary";
-      summary.textContent = persona.summary;
-      root.append(summary);
-    }
-    if (!facts.length && !persona.summary) root.textContent = "No saved details yet.";
-  }
-
-  function setListening(text, kind = "") {
-    clearTimeout(listeningTimer);
-    const el = $("listening");
-    el.hidden = !text;
-    el.className = `listening ${kind}`;
-    $("listening-text").textContent = text || "";
-  }
-
-  function showHeard(facts) {
-    const list = $("heard-list");
-    list.replaceChildren();
-    for (const fact of facts) {
-      const item = document.createElement("li");
-      item.textContent = fact;
-      list.append(item);
-    }
-    $("heard").hidden = false;
-    clearTimeout(heardTimer);
-    heardTimer = setTimeout(() => { $("heard").hidden = true; }, 25000);
-  }
-
-  function personaLine(persona) {
-    if (!persona) return "Meeting for the first time";
-    return persona.summary || (persona.key_facts || [])[0] || "No saved details yet.";
-  }
-
-  async function loadOtherPersona(faceId) {
-    try {
-      const response = await fetch(`/persona/${encodeURIComponent(faceId)}`);
-      const persona = response.ok ? await response.json() : null;
-      updateOther(faceId, persona);
-    } catch {
-      updateOther(faceId, undefined);
-    }
-  }
-
-  function updateOther(faceId, persona) {
-    const entry = others.get(faceId);
-    if (!entry) return;
-    entry.el.querySelector(".other-memory").textContent =
-      persona === undefined ? "Could not load memories" : personaLine(persona);
-  }
-
-  function renderOthers(list) {
+  function updateCards() {
     const now = performance.now();
-    for (const other of list || []) {
-      if (!other.face_id || other.face_id === currentFaceId) continue;
-      let entry = others.get(other.face_id);
-      if (!entry) {
-        const el = document.createElement("div");
-        el.className = "other-person";
-        const name = document.createElement("div");
-        name.className = "other-name";
-        name.textContent = personName(other.face_id);
-        const memory = document.createElement("div");
-        memory.className = "other-memory";
-        memory.textContent = "Recalling…";
-        el.append(name, memory);
-        $("others-list").append(el);
-        entry = { el };
-        others.set(other.face_id, entry);
-        void loadOtherPersona(other.face_id);
-      }
-      entry.lastSeen = now;
+    for (const [faceId, card] of cards) {
+      const here = present.has(faceId);
+      if (here) card.lastSeen = now;
+      card.el.classList.toggle("here", here);
+      card.el.classList.toggle("away", !here);
+      card.el.classList.toggle("focused", faceId === focusedId);
+      card.el.querySelector(".presence-text").textContent = seenText(card, faceId);
     }
-    pruneOthers();
+    $("people-empty").hidden = cards.size > 0;
+    const here = [...cards.keys()].filter((id) => present.has(id)).length;
+    $("people-count").textContent = cards.size ? (here ? `${here} here now` : "No one here now") : "No one yet";
+    $("people-count").classList.toggle("recognized", here > 0);
+    const waiting = [...present].filter((id) => !cards.has(id));
+    $("waiting").hidden = !waiting.length;
+    $("waiting").textContent = waiting.length ? `Getting to know ${waiting.map(personName).join(", ")}…` : "";
   }
 
-  function pruneOthers() {
-    const now = performance.now();
-    for (const [faceId, entry] of others) {
-      if (faceId === currentFaceId || now - entry.lastSeen > OTHER_FACE_TTL_MS) {
-        entry.el.remove();
-        others.delete(faceId);
-      }
-    }
-    $("others").hidden = others.size === 0;
-    $("others-count").textContent = `${others.size} ${others.size === 1 ? "person" : "people"}`;
+  function setListening(faceId, text, kind = "") {
+    const card = cards.get(faceId);
+    if (!card) return;
+    clearTimeout(card.listeningTimer);
+    const listening = card.el.querySelector(".listening");
+    listening.hidden = !text;
+    listening.className = `listening ${kind}`;
+    listening.querySelector(".listening-text").textContent = text || "";
   }
 
-  function showPortrait(url) {
-    if (!url || url === lastPortraitUrl) return;
-    lastPortraitUrl = url;
-    const image = $("portrait");
-    image.onload = () => {
-      image.hidden = false;
-      $("portrait-placeholder").classList.add("hidden");
-      $("portrait-state").textContent = "";
-      $("forget-portrait").disabled = false;
-    };
-    image.onerror = () => {
-      image.hidden = true;
-      $("portrait-placeholder").classList.remove("hidden");
-      $("portrait-state").textContent = "";
-      $("forget-portrait").disabled = true;
-      lastPortraitUrl = null;
-    };
-    image.src = `${url}?v=${Date.now()}`;
-  }
-
-  function clearIdentity() {
-    currentFaceId = null;
-    lastPortraitUrl = null;
-    portraitRequest += 1;
-    $("face-name").textContent = "No one yet";
-    $("face-id").textContent = "";
-    $("confidence").textContent = "";
-    $("match-status").textContent = "Waiting";
-    $("match-status").classList.remove("recognized");
-    $("portrait").hidden = true;
-    $("portrait").removeAttribute("src");
-    $("portrait-placeholder").classList.remove("hidden");
-    $("portrait-state").textContent = "";
-    $("forget-portrait").disabled = true;
-    $("persona").textContent = "No one is with you right now.";
-    $("memory-state").textContent = "";
-    shownFacts = new Set();
-    setListening("");
-    $("heard").hidden = true;
+  function showLearned(faceId, facts) {
+    const card = cards.get(faceId);
+    if (!card) return;
+    const heard = card.el.querySelector(".heard");
+    const list = heard.querySelector("ul");
+    list.replaceChildren(...facts.map((fact) => el("li", "", fact)));
+    heard.hidden = false;
+    clearTimeout(card.heardTimer);
+    card.heardTimer = setTimeout(() => { heard.hidden = true; }, 30000);
   }
 
   function addTranscript(event) {
@@ -352,9 +364,10 @@
     root.scrollTop = root.scrollHeight;
     transcriptCount += 1;
     $("transcript-count").textContent = `${transcriptCount} ${transcriptCount === 1 ? "line" : "lines"}`;
-    if (event.speaker === "other" && event.face_id && event.face_id === currentFaceId) {
-      heardCount += 1;
-      setListening(`Listening · heard ${heardCount} ${heardCount === 1 ? "thing" : "things"}`, "pulse");
+    const card = event.speaker === "other" && event.face_id ? cards.get(event.face_id) : null;
+    if (card) {
+      card.heard += 1;
+      setListening(event.face_id, `Listening · heard ${card.heard} ${card.heard === 1 ? "thing" : "things"}`, "pulse");
     }
   }
 
@@ -400,66 +413,51 @@
 
   function handleEvent(event) {
     if (event.type === "face_update") {
-      if (event.face_id !== currentFaceId) {
-        currentFaceId = event.face_id;
-        if (currentFaceId) {
-          const name = personName(currentFaceId);
-          $("face-name").textContent = name;
-          $("face-id").textContent = "";
-          $("match-status").textContent = event.is_new ? "New friend" : "Recognized";
-          $("match-status").classList.add("recognized");
-          $("confidence").textContent = "";
-          $("persona").textContent = "Remembering…";
-          shownFacts = new Set();
-          $("heard").hidden = true;
-          $("memory-state").textContent = "Remembering…";
-          $("portrait").hidden = true;
-          $("portrait-placeholder").classList.remove("hidden");
-          $("portrait-state").textContent = "";
-          $("forget-portrait").disabled = true;
-          void fetchPersona(currentFaceId);
-          showToast(event.is_new ? `Meeting ${name}` : `This is ${name}`);
-        } else {
-          clearIdentity();
-        }
-      } else if (event.face_id) {
-        $("confidence").textContent = "";
-      }
-      if (event.face_id) showPortrait(event.portrait_url);
-      renderOthers(event.others);
-      appendLog(event.face_id ? `${personName(event.face_id)} is here` : "Looking for a familiar face");
+      // Only the debounced fields drive the cards, so one blurry or covered frame changes nothing.
+      const previousFocus = focusedId;
+      present = new Set(event.present || []);
+      focusedId = event.focused || null;
+      for (const faceId of present) void admit(faceId);
+      if (event.face_id && event.face_id === focusedId && event.portrait_url) setCardPhoto(focusedId);
+      updateCards();
+      if (focusedId !== previousFocus) appendLog(focusedId ? `${personName(focusedId)} is here` : "Looking for a familiar face");
     } else if (event.type === "providers_changed") {
       showProviders(event);
     } else if (event.type === "transcript") {
       addTranscript(event);
     } else if (event.type === "persona_updated") {
-      if (others.has(event.face_id)) updateOther(event.face_id, event.persona);
-      if (event.face_id === currentFaceId) {
-        const facts = event.persona.key_facts || [];
-        const fresh = facts.filter((fact) => !shownFacts.has(fact));
-        renderPersona(event.persona, fresh);
-        shownFacts = new Set(facts);
-        $("memory-state").textContent = "Just updated";
+      const before = new Set(factsOf(personas.get(event.face_id)));
+      personas.set(event.face_id, event.persona);
+      const fresh = factsOf(event.persona).filter((fact) => !before.has(fact));
+      if (cards.has(event.face_id)) {
+        renderCardBody(event.face_id, fresh);
         if (fresh.length) {
-          showHeard(fresh);
+          showLearned(event.face_id, fresh);
           showToast(`Got it: ${fresh[0]}`);
         }
-        if (!$("listening").classList.contains("pulse")) setListening("");
+        const card = cards.get(event.face_id);
+        if (!card.el.querySelector(".listening").classList.contains("pulse")) setListening(event.face_id, "");
+      } else if (present.has(event.face_id)) {
+        void admit(event.face_id);
       }
-      appendLog("Remembered something new");
+      appendLog(`Remembered something new about ${personName(event.face_id)}`);
     } else if (event.type === "conversation_started") {
       $("talking").innerHTML = "<i></i> Talking";
       $("talking").classList.add("active");
-      heardCount = 0;
-      if (event.face_id && event.face_id === currentFaceId) setListening("Listening…");
+      const card = event.face_id ? cards.get(event.face_id) : null;
+      if (card) {
+        card.heard = 0;
+        setListening(event.face_id, "Listening…");
+      }
     } else if (event.type === "conversation_ended") {
       $("talking").innerHTML = "<i></i> Quiet";
       $("talking").classList.remove("active");
-      if (event.face_id && event.face_id === currentFaceId && heardCount) {
-        setListening("Remembering what you talked about…", "saving");
-        listeningTimer = setTimeout(() => setListening(""), 30000);
-      } else {
-        setListening("");
+      const card = event.face_id ? cards.get(event.face_id) : null;
+      if (card && card.heard) {
+        setListening(event.face_id, "Remembering what you talked about…", "saving");
+        card.listeningTimer = setTimeout(() => setListening(event.face_id, ""), LISTENING_CLEAR_MS);
+      } else if (card) {
+        setListening(event.face_id, "");
       }
     }
   }
@@ -521,9 +519,9 @@
     if (frameTimer) clearInterval(frameTimer);
     frameTimer = null;
     stopLipBurst();
-    for (const entry of others.values()) entry.el.remove();
-    others.clear();
-    pruneOthers();
+    present = new Set();
+    focusedId = null;
+    updateCards();
     if (voiceTimer) {
       clearTimeout(voiceTimer);
       voiceTimer = null;
@@ -577,20 +575,20 @@
     }, 10_000);
   }
 
-  async function forgetPortrait() {
-    if (!currentFaceId || !lastPortraitUrl) return;
-    if (!window.confirm(`Forget the photo of ${personName(currentFaceId)}?`)) return;
+  async function forgetPortrait(faceId) {
+    const card = cards.get(faceId);
+    if (!card || !card.hasPhoto) return;
+    if (!window.confirm(`Forget the photo of ${personName(faceId)}?`)) return;
     try {
-      const response = await fetch(`/faces/${encodeURIComponent(currentFaceId)}/portrait`, { method: "DELETE" });
+      const response = await fetch(`/faces/${encodeURIComponent(faceId)}/portrait`, { method: "DELETE" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       $("consent").checked = false;
-      lastPortraitUrl = null;
-      $("portrait").hidden = true;
-      $("portrait").removeAttribute("src");
-      $("portrait-placeholder").classList.remove("hidden");
-      $("portrait-state").textContent = "";
-      $("forget-portrait").disabled = true;
-      appendLog(`Photo of ${personName(currentFaceId)} forgotten`);
+      card.hasPhoto = false;
+      const image = card.el.querySelector("img");
+      image.hidden = true;
+      image.removeAttribute("src");
+      card.el.querySelector(".forget-button").hidden = true;
+      appendLog(`Photo of ${personName(faceId)} forgotten`);
     } catch (error) {
       appendLog("Couldn’t forget that photo, please try again");
     }
@@ -600,8 +598,7 @@
   $("start").addEventListener("click", beginCapture);
   $("stop").addEventListener("click", () => void stopCapture());
   $("voice").addEventListener("click", enrollVoice);
-  $("forget-portrait").addEventListener("click", forgetPortrait);
-  setInterval(pruneOthers, 1000);
+  setInterval(updateCards, 15000);
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });
 
   for (const id of Object.keys(PROVIDER_SELECTS)) $(id).addEventListener("change", (event) => void switchProvider(event.target));

@@ -74,7 +74,10 @@ class ConversationMatcher:
                 return
             conv = self._start(self._tracker.face_at(utterance.start), utterance.start)
 
-        face_id = conv.face_id if utterance.speaker == "other" else None
+        face_id = None
+        if utterance.speaker == "other":
+            # The face in focus for most of the line (1-per-second samples), else the conversation's face.
+            face_id = self._db.majority_face(utterance.start, utterance.end) or conv.face_id
         self._db.insert_segment(
             conv.conv_id, utterance.start, utterance.end, utterance.text, utterance.speaker, face_id
         )

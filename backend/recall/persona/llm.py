@@ -4,40 +4,63 @@ import logging
 import anthropic
 from pydantic import ValidationError
 
-from recall.persona.models import PersonaUpdate, PersonaUpdateError
+from recall.persona.models import Persona, PersonaUpdate, PersonaUpdateError
 
 log = logging.getLogger(__name__)
+
+_LIST = {"type": "array", "items": {"type": "string"}}
 
 # Mirrors PersonaUpdate; hand-written because structured outputs need additionalProperties=false
 # and every field required.
 PERSONA_SCHEMA = {
     "type": "object",
     "properties": {
-        "names": {"type": "array", "items": {"type": "string"}},
-        "nickname": {"type": "string"},
-        "relation": {"type": "string"},
-        "key_facts": {"type": "array", "items": {"type": "string"}},
-        "summary": {"type": "string"},
+        "changed": {"type": "boolean"},
+        "persona": {
+            "type": "object",
+            "properties": {
+                "names": _LIST,
+                "nickname": {"type": "string"},
+                "relation": {"type": "string"},
+                "work": _LIST,
+                "family": _LIST,
+                "interests": _LIST,
+                "plans": _LIST,
+                "other": _LIST,
+                "last_talked_about": {"type": "string"},
+                "summary": {"type": "string"},
+            },
+            "required": [
+                "names", "nickname", "relation", "work", "family", "interests", "plans", "other",
+                "last_talked_about", "summary",
+            ],
+            "additionalProperties": False,
+        },
     },
-    "required": ["names", "nickname", "relation", "key_facts", "summary"],
+    "required": ["changed", "persona"],
     "additionalProperties": False,
 }
 
-SYSTEM_PROMPT = """\
-You maintain a short profile of a person the user talks to. The profile is built only from what \
-that person said to the user. You receive the current profile (or none) and new lines spoken by \
-that person, in order, and return the full updated profile.
+SYSTEM_PROMPT = """You maintain a short, structured profile of a person the user talks to, built only from what that \
+person said to the user. Every minute or two you receive the current profile (or none) and the new \
+lines that person has spoken since the last update, in order. Decide whether the new lines add \
+anything worth remembering, and return the full profile.
 
+- changed: false if the new lines add nothing durable (small talk, filler, noise, or things already \
+in the profile); then return the current profile unchanged. true if you added or corrected anything.
 - names: names the person goes by, if stated. Keep earlier ones.
 - nickname: a nickname if one is used, otherwise an empty string.
-- relation: their relationship to the user (colleague, friend, family, ...) if stated or clearly \
-implied, otherwise "unknown".
-- key_facts: short, durable facts about them (work, interests, plans, preferences). Keep existing \
-facts unless the new lines contradict them, drop duplicates, at most 12.
-- summary: 2-3 sentences the user could glance at right before talking to them again.
+- relation: their relationship to the user (colleague, friend, daughter, neighbour, ...) if stated or \
+clearly implied, otherwise "unknown".
+- work, family, interests, plans, other: short facts in plain words, grouped by topic. Keep existing \
+facts unless the new lines contradict them, drop duplicates, at most 5 per group.
+- last_talked_about: one short line on what the most recent lines were about, e.g. "Her trip to Goa \
+next month". Keep the current value if the new lines don't say anything substantive.
+- summary: 1-2 warm, simple sentences the user could glance at right before talking to them again.
 
-Lines come from speech recognition and may contain errors; ignore lines that are clearly noise. \
-Never invent details that the lines do not support."""
+Refer to the person by name or as "they" unless they said which pronouns they use; never guess \
+gender from a name. Lines come from speech recognition and may contain errors; ignore lines that \
+are clearly noise. Never invent details that the lines do not support."""
 
 
 class ClaudePersonaWriter:
@@ -46,10 +69,8 @@ class ClaudePersonaWriter:
         self._model = model
         self._effort = effort
 
-    async def update(self, current: dict | None, lines: list[str]) -> PersonaUpdate:
-        profile = "none" if current is None else json.dumps(
-            {key: current[key] for key in PERSONA_SCHEMA["properties"]}, indent=2
-        )
+    async def update(self, current: Persona | None, lines: list[str]) -> PersonaUpdate:
+        profile = "none" if current is None else json.dumps(current.model_dump(), indent=2)
         transcript = "\n".join(f"- {line}" for line in lines)
         content = (
             f"Current profile:\n{profile}\n\n"

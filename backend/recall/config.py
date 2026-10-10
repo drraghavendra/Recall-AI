@@ -64,8 +64,8 @@ class Settings(BaseSettings):
     lip_min_openness_std: float = 0.03
 
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
-    # Sonnet is plenty for a short profile and much faster than Opus; updates run about once a minute.
+    # Sonnet is plenty for a short profile and faster than Opus. The persona job runs every
+    # `persona_cycle_s` after the previous run finished, plus once whenever a conversation ends.
     anthropic_model: str = "claude-sonnet-5-5"
     persona_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
-    persona_update_interval_s: float = 60.0
-    persona_min_new_segments: int = 2
+    persona_cycle_s: float = 90.0
