@@ -12,6 +12,8 @@ class ResemblyzerEncoder:
         self._lock = threading.Lock()
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
-        wav = preprocess_wav(audio, source_sr=self._sample_rate, trim_silence=False)
+        wav = preprocess_wav(audio, source_sr=self._sample_rate)
+        if wav.size == 0:  # silence trimming can empty a very short clip
+            wav = audio
         with self._lock:
             return self._encoder.embed_utterance(wav)
