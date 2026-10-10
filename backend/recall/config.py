@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     face_match_threshold: float = 90.0
     local_face_db_path: str = "recall_faces.sqlite3"
     local_face_match_threshold: float = 0.55
+    # Best score below this = a genuinely new person; between this and the match threshold = ambiguous (ignored).
+    local_face_new_face_threshold: float = 0.35
+    local_face_min_det_score: float = 0.6
     frames_per_window: int = 1
     face_confirm_windows: int = 2
     face_absent_confirm_windows: int = 3
