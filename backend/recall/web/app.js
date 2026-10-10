@@ -400,5 +400,6 @@
 
   fetch("/health").then((response) => response.json()).then((health) => {
     $("provider").textContent = `FACE MODULE · ${health.face_backend || "CONFIGURED"}`;
+    if (health.stt_backend) $("stt-provider").textContent = `TRANSCRIBED LOCALLY · ${health.stt_backend.toUpperCase()}`;
   }).catch(() => { $("provider").textContent = "FACE MODULE · OFFLINE"; });
 })();

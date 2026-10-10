@@ -32,7 +32,13 @@ class Settings(BaseSettings):
     vad_min_silence_ms: int = 600
     vad_speech_pad_ms: int = 100
     max_utterance_s: float = 15.0
+
+    # Speech-to-text provider selected by the transcriber factory. Both run locally on CPU.
+    stt_backend: Literal["whisper", "parakeet"] = "whisper"
     whisper_model: str = "base.en"
+    parakeet_model: str = "nemo-parakeet-tdt-0.6b-v2"
+    parakeet_quantization: str | None = "int8"
+
     self_voice_threshold: float = 0.75
     min_self_voice_enroll_s: float = 3.0
 

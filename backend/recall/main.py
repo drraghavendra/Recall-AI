@@ -47,7 +47,8 @@ def _services(holder: Request | WebSocket) -> Services:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "face_backend": Settings().face_backend}
+    settings = Settings()
+    return {"status": "ok", "face_backend": settings.face_backend, "stt_backend": settings.stt_backend}
 
 
 @app.get("/persona/{face_id}")
