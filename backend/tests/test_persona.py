@@ -121,3 +121,51 @@ def test_flat_personas_from_earlier_builds_are_migrated(tmp_path):
     )
     assert db._conn.execute("SELECT last_segment_id FROM profiles").fetchone()[0] == 7
     assert Database(path).get_persona("alice") is not None  # idempotent
+
+
+def test_lines_are_sent_batch_s_after_the_first_one_even_mid_conversation():
+    writer = FakeWriter()
+    db = Database(":memory:")
+    conv = db.open_conversation("alice", 0.0)
+    service = PersonaService(db, lambda _e: None, writer, cycle_s=60, batch_s=0.2)
+
+    async def scenario():
+        job = asyncio.create_task(service.run())
+        db.insert_segment(conv, 0, 1, "Alice fact one", "other", "alice")
+        service.line_added()
+        await asyncio.sleep(0.1)
+        db.insert_segment(conv, 1, 2, "fact two", "other", "alice")
+        service.line_added()  # doesn't push the first line's deadline back
+        await asyncio.sleep(0.05)
+        assert writer.calls == []
+        await asyncio.sleep(0.15)
+        assert writer.calls == [("?", ["Alice fact one", "fact two"])]
+        db.insert_segment(conv, 2, 3, "fact three", "other", "alice")
+        service.request_run()  # conversation ended: no waiting
+        await asyncio.sleep(0.05)
+        job.cancel()
+
+    asyncio.run(scenario())
+    assert writer.calls == [("?", ["Alice fact one", "fact two"]), ("Alice", ["fact three"])]
+
+
+def test_faces_are_updated_in_parallel():
+    class SlowWriter(FakeWriter):
+        async def update(self, current, lines):
+            await asyncio.sleep(0.2)
+            return await super().update(current, lines)
+
+    writer = SlowWriter()
+    db, conv, _, _ = setup(writer)
+    service = PersonaService(db, lambda _e: None, writer, cycle_s=60)
+
+    async def scenario():
+        db.insert_segment(conv, 0, 1, "Alice fact", "other", "alice")
+        db.insert_segment(conv, 1, 2, "Bob fact", "other", "bob")
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        await service.run_once()
+        return loop.time() - started
+
+    assert asyncio.run(scenario()) < 0.35
+    assert len(writer.calls) == 2

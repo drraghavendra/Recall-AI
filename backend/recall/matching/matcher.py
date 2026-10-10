@@ -46,6 +46,7 @@ class ConversationMatcher:
         on_finalized: Callable[[Conversation], None],
         gate: Callable[[Utterance], Verdict] | None = None,
         max_utterance_s: float | None = None,
+        on_line: Callable[[], None] | None = None,
     ):
         self._db = db
         self._tracker = tracker
@@ -55,6 +56,7 @@ class ConversationMatcher:
         self._on_finalized = on_finalized
         self._gate = gate
         self._max_utterance_s = max_utterance_s
+        self._on_line = on_line
         self._open: Conversation | None = None
         self._closing: list[Conversation] = []
 
@@ -86,6 +88,8 @@ class ConversationMatcher:
         )
         self._publish_transcript(utterance, utterance.speaker, face_id)
         conv.segment_count += 1
+        if utterance.speaker == "other" and self._on_line is not None:
+            self._on_line()
         if conv is self._open:
             conv.last_speech_end = max(conv.last_speech_end, utterance.end)
 

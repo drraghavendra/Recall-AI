@@ -136,6 +136,7 @@ def build_services(settings: Settings) -> Services:
         hub.publish,
         ClaudePersonaWriter(settings.anthropic_model, settings.persona_effort),
         settings.persona_cycle_s,
+        settings.persona_batch_s,
     )
     matcher = ConversationMatcher(
         db,
@@ -152,6 +153,7 @@ def build_services(settings: Settings) -> Services:
             lambda start, end: db.majority_face(start, end) or tracker.face_at(start),
         ),
         max_utterance_s=settings.max_utterance_s,
+        on_line=persona.line_added,
     )
 
     stored_profile = db.get_self_voice()

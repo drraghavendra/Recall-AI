@@ -2,7 +2,7 @@
 
 One FastAPI process implementing [DESIGN.md](../DESIGN.md): an always-on **read path**
 (frames → faceId → persona) and a **write path** (speech → transcript lines tagged with the face in
-focus → a persona job every `RECALL_PERSONA_CYCLE_S`, default 90s). Face recognition is selected with
+focus → a persona job `RECALL_PERSONA_BATCH_S` after new lines, default 30s, even mid-conversation). Face recognition is selected with
 `RECALL_FACE_BACKEND`: AWS Rekognition (default), local InsightFace, or Mock. The persona LLM is
 Claude; VAD, transcription and the self/other voice check run locally.
 
@@ -141,7 +141,7 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
 | `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
 | `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper, Parakeet or Sarvam) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `sarvam.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
-| `persona/` | One background job: every cycle, new lines grouped by face → Claude decides whether they add anything (structured output with a `changed` flag) → save and push only real changes. Each face's bookmark advances only after a successful call | `PersonaWriter` |
+| `persona/` | One background job: 30 s after new lines (even mid-conversation) or when a conversation ends, new lines grouped by face → Claude decides whether they add anything (structured output with a `changed` flag) → save and push only real changes. Each face's bookmark advances only after a successful call | `PersonaWriter` |
 | `db.py` | SQLite schema + queries | — |
 | `wiring.py` | Builds and starts everything; the only place concrete classes are chosen | — |
 
