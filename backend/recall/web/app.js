@@ -202,41 +202,79 @@
     return minutes < 1 ? "Seen just now" : minutes === 1 ? "Seen a minute ago" : `Seen ${minutes} minutes ago`;
   }
 
+  const relationOf = (persona) => (persona && persona.relation && persona.relation !== "unknown" ? persona.relation : "");
+
+  // Card: just enough to recognise someone at a glance; the full persona opens in a pop-up on click.
   function renderCardBody(faceId, fresh = []) {
     const card = cards.get(faceId);
     if (!card) return;
+    if (fresh.length) card.fresh = fresh;
     const persona = personas.get(faceId);
     card.el.querySelector(".card-name").textContent = personName(faceId);
-    const relation = persona && persona.relation && persona.relation !== "unknown" ? persona.relation : "";
-    card.el.querySelector(".card-relation").textContent = relation;
+    card.el.querySelector(".card-relation").textContent = relationOf(persona);
     const body = card.el.querySelector(".card-body");
     body.replaceChildren();
     if (persona === undefined) {
       body.append(el("p", "card-muted", "Remembering…"));
-      return;
-    }
-    if (!goodPersona(persona)) {
+    } else if (!goodPersona(persona)) {
       body.append(el("p", "first-meeting", "Meeting for the first time."));
-      return;
-    }
-    if (persona.summary) body.append(el("p", "card-summary", persona.summary));
-    if (persona.last_talked_about) {
-      const last = el("p", "card-last");
+    } else if (persona.last_talked_about) {
+      const last = el("p", "card-line");
       last.append(el("strong", "", "Last time: "), document.createTextNode(persona.last_talked_about));
       body.append(last);
+    } else {
+      body.append(el("p", "card-line", persona.summary || factsOf(persona)[0] || ""));
     }
-    const groups = el("div", "card-groups");
-    for (const [key, label] of GROUPS) {
-      const facts = persona[key] || [];
-      if (!facts.length) continue;
-      const group = el("div", "card-group");
-      group.append(el("div", "card-group-label", label));
-      const list = el("ul");
-      for (const fact of facts) list.append(el("li", fresh.includes(fact) ? "fresh" : "", fact));
-      group.append(list);
-      groups.append(group);
+    if (dialogFace === faceId) renderDetails();
+  }
+
+  let dialogFace = null;
+
+  function openDetails(faceId) {
+    dialogFace = faceId;
+    renderDetails();
+    if (!$("person-dialog").open) $("person-dialog").showModal();
+  }
+
+  function renderDetails() {
+    const faceId = dialogFace;
+    const card = cards.get(faceId);
+    if (!card) return $("person-dialog").close();
+    const persona = personas.get(faceId);
+    const image = $("dialog-photo");
+    image.hidden = !card.hasPhoto;
+    if (card.hasPhoto) image.src = card.photoUrl;
+    $("dialog-name").textContent = personName(faceId);
+    $("dialog-relation").textContent = relationOf(persona);
+    $("dialog-presence").className = `presence ${present.has(faceId) ? "here" : "away"}`;
+    $("dialog-presence-text").textContent = seenText(card, faceId);
+    const body = $("dialog-body");
+    body.replaceChildren();
+    if (!goodPersona(persona)) {
+      body.append(el("p", "first-meeting", "Meeting for the first time. What they share will appear here."));
+    } else {
+      if (persona.summary) body.append(el("p", "card-summary", persona.summary));
+      if (persona.last_talked_about) {
+        const last = el("p", "card-last");
+        last.append(el("strong", "", "Last time: "), document.createTextNode(persona.last_talked_about));
+        body.append(last);
+      }
+      const groups = el("div", "card-groups");
+      for (const [key, label] of GROUPS) {
+        const facts = persona[key] || [];
+        if (!facts.length) continue;
+        const group = el("div", "card-group");
+        group.append(el("div", "card-group-label", label));
+        const list = el("ul");
+        for (const fact of facts) list.append(el("li", (card.fresh || []).includes(fact) ? "fresh" : "", fact));
+        group.append(list);
+        groups.append(group);
+      }
+      body.append(groups);
     }
-    body.append(groups);
+    const met = persona && persona.times_met ? `Talked ${persona.times_met} ${persona.times_met === 1 ? "time" : "times"}` : "";
+    $("dialog-stats").textContent = met;
+    $("dialog-forget").hidden = !card.hasPhoto;
   }
 
   // The server keeps the best photo it has seen and bumps the URL's version when it replaces it.
@@ -245,13 +283,18 @@
     if (!card || card.photoUrl === url) return;
     card.photoUrl = url;
     const image = card.el.querySelector("img");
-    image.onload = () => { image.hidden = false; card.hasPhoto = true; card.el.querySelector(".forget-button").hidden = false; };
+    image.onload = () => { image.hidden = false; card.hasPhoto = true; if (dialogFace === faceId) renderDetails(); };
     image.onerror = () => { if (!card.hasPhoto) image.hidden = true; };
     image.src = url;
   }
 
   function buildCard(faceId) {
     const card = el("article", "person-card");
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", "Show everything you know about this person");
+    card.addEventListener("click", () => openDetails(faceId));
+    card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDetails(faceId); } });
     const top = el("div", "card-top");
     const avatar = el("div", "avatar");
     const image = el("img");
@@ -261,8 +304,10 @@
     const id = el("div", "card-id");
     const presence = el("div", "presence");
     presence.append(el("i"), el("span", "presence-text"));
-    id.append(el("div", "card-name"), el("div", "card-relation"), presence);
-    top.append(avatar, id);
+    const meta = el("div", "card-meta");
+    meta.append(el("span", "card-relation"), presence);
+    id.append(el("div", "card-name"), meta);
+    top.append(avatar, id, el("span", "card-more", "›"));
     const listening = el("div", "listening");
     listening.hidden = true;
     const dots = el("span", "listening-dots");
@@ -270,11 +315,8 @@
     listening.append(dots, el("span", "listening-text"));
     const heard = el("div", "heard");
     heard.hidden = true;
-    heard.append(el("div", "heard-title", "Just learned"), el("ul"));
-    const forget = el("button", "forget-button", "Forget this photo");
-    forget.hidden = true;
-    forget.addEventListener("click", () => void forgetPortrait(faceId));
-    card.append(top, listening, heard, el("div", "card-body"), forget);
+    heard.append(el("span", "heard-title", "Just learned: "), el("span", "heard-text"));
+    card.append(top, listening, heard, el("div", "card-body"));
     return card;
   }
 
@@ -325,6 +367,7 @@
     $("people-count").classList.toggle("recognized", here > 0);
     const waiting = [...present].filter((id) => !cards.has(id));
     updateSpecsHud();
+    if (dialogFace && $("person-dialog").open) renderDetails();
     $("waiting").hidden = !waiting.length;
     $("waiting").textContent = waiting.length ? `Getting to know ${waiting.map(personName).join(", ")}…` : "";
   }
@@ -354,6 +397,8 @@
     clearTimeout(card.listeningTimer);
     const listening = card.el.querySelector(".listening");
     listening.hidden = !text;
+    // One status line per card: listening, else "just learned", else "last time".
+    card.el.classList.toggle("is-listening", Boolean(text));
     listening.className = `listening ${kind}`;
     listening.querySelector(".listening-text").textContent = text || "";
   }
@@ -362,11 +407,11 @@
     const card = cards.get(faceId);
     if (!card) return;
     const heard = card.el.querySelector(".heard");
-    const list = heard.querySelector("ul");
-    list.replaceChildren(...facts.map((fact) => el("li", "", fact)));
+    heard.querySelector(".heard-text").textContent = facts.length > 1 ? `${facts[0]} (+${facts.length - 1} more)` : facts[0];
     heard.hidden = false;
+    card.el.classList.add("has-heard");
     clearTimeout(card.heardTimer);
-    card.heardTimer = setTimeout(() => { heard.hidden = true; }, 30000);
+    card.heardTimer = setTimeout(() => { heard.hidden = true; card.el.classList.remove("has-heard"); }, 30000);
   }
 
   function addTranscript(event) {
@@ -535,6 +580,7 @@
       $("stop").disabled = false;
       $("voice").disabled = false;
       setStatus("On", "live");
+      document.body.classList.add("live");
       appendLog("Camera is on");
     } catch (error) {
       setStatus(error.message || "Could not start capture", "error");
@@ -571,6 +617,7 @@
     $("stop").disabled = true;
     $("voice").disabled = true;
     $("start").disabled = !$("consent").checked;
+    document.body.classList.remove("live");
     if (updateStatus) {
       setStatus("Not started");
       appendLog("Camera is off");
@@ -616,7 +663,7 @@
       const image = card.el.querySelector("img");
       image.hidden = true;
       image.removeAttribute("src");
-      card.el.querySelector(".forget-button").hidden = true;
+      if (dialogFace === faceId) renderDetails();
       appendLog(`Photo of ${personName(faceId)} forgotten`);
     } catch (error) {
       appendLog("Couldn’t forget that photo, please try again");
@@ -628,6 +675,11 @@
   $("stop").addEventListener("click", () => void stopCapture());
   $("voice").addEventListener("click", enrollVoice);
   setInterval(updateCards, 15000);
+  $("dialog-close").addEventListener("click", () => $("person-dialog").close());
+  $("dialog-forget").addEventListener("click", () => { if (dialogFace) void forgetPortrait(dialogFace); });
+  // Clicking the dimmed backdrop (outside the panel) closes the pop-up.
+  $("person-dialog").addEventListener("click", (event) => { if (event.target === $("person-dialog")) $("person-dialog").close(); });
+  $("person-dialog").addEventListener("close", () => { dialogFace = null; });
   $("specs-toggle").addEventListener("click", () => setSpecs($("specs").hidden));
   try { if (localStorage.getItem("recall-specs") === "1") setSpecs(true); } catch {}
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });

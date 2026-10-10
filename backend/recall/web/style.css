@@ -269,3 +269,51 @@ details.transcript-panel[open] .kicker:before { content: "Conversation · tap to
 /* The silhouette's shoulders hang below .lens-ring (absolutely positioned), so reserve room for them. */
 .people-empty { gap: 16px; }
 .people-empty .lens-ring { margin: 0 0 42px; }
+
+/* Compact cards (all three fit beside the camera); full details open in a pop-up */
+.person-card { position: relative; padding: 14px 16px; cursor: pointer; }
+.person-card:hover { background: var(--surface); box-shadow: var(--shadow); }
+.person-card:focus-visible { outline: 3px solid var(--clay); outline-offset: 2px; }
+.card-top { grid-template-columns: 56px minmax(0, 1fr) auto; }
+.avatar { width: 56px; height: 56px; }
+.card-name { font-size: 22px; }
+.card-more { align-self: center; color: var(--faint); font-size: 30px; line-height: 1; }
+.card-body { margin-top: 8px; font-size: 17px; }
+.card-body p { margin: 0; }
+.card-line { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); }
+.card-line strong { color: var(--clay-dark); }
+.person-card .listening { margin-top: 8px; padding: 5px 12px; font-size: 15px; }
+.person-card .heard { margin-top: 8px; padding: 8px 12px; }
+.person-card .heard ul { font-size: 16px; margin: 2px 0 0; }
+.person-card .heard li { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.heard-more { list-style: none; margin-left: -20px; color: var(--muted); font-size: 14px; }
+.people { gap: 10px; }
+
+.person-dialog { width: min(560px, calc(100% - 32px)); max-height: min(86vh, 760px); padding: 0; border: 0; border-radius: 24px; color: var(--text); background: var(--surface); box-shadow: 0 30px 80px rgba(60, 40, 20, .3); }
+.person-dialog::backdrop { background: rgba(58, 46, 37, .45); backdrop-filter: blur(2px); }
+.dialog-panel { position: relative; padding: 24px 26px 20px; }
+.dialog-close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; padding: 0; border-radius: 50%; color: var(--muted); background: var(--surface-soft); font-size: 26px; line-height: 1; }
+.dialog-top { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 18px; align-items: center; padding-right: 40px; }
+.dialog-avatar { width: 96px; height: 96px; }
+.dialog-avatar .avatar-placeholder { top: 20px; width: 34px; height: 34px; margin-left: -17px; box-shadow: 0 40px 0 12px #d6c3aa; }
+.dialog-name { font: 600 30px/1.15 var(--serif); overflow-wrap: anywhere; }
+.presence.here { color: var(--sage); }
+.presence.here i { background: #5f9b4c; box-shadow: 0 0 0 3px #dcebd3; }
+.presence.away { color: var(--rose); }
+.presence.away i { background: #c0574a; box-shadow: 0 0 0 3px #f3dcd7; }
+.dialog-body { margin-top: 18px; font-size: 18px; line-height: 1.55; }
+.dialog-body p { margin: 0 0 10px; }
+.dialog-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+
+/* While the camera is on, the intro and consent banner step aside so the camera and all three cards fit. */
+body.live .intro, body.live .consent { display: none; }
+body.live .workspace { margin-top: 18px; }
+.card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.card-meta .presence { margin-top: 0; }
+.card-meta .card-relation:not(:empty)::after { content: "·"; margin-left: 10px; color: var(--faint); }
+.person-card .heard { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; margin-top: 8px; padding: 0; border: 0; background: none; animation: none; font-size: 17px; }
+.person-card .heard .heard-title { color: var(--sage); font-size: 17px; }
+.person-card.is-listening .heard, .person-card.is-listening .card-body, .person-card.has-heard .card-body { display: none; }
+.card-line { -webkit-line-clamp: 1; }
+.person-card .listening { margin-top: 8px; }
+

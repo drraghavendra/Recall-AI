@@ -89,6 +89,21 @@
       </section>
       <footer><span>Recall <span class="footer-muted">· the people you love, close at hand</span></span><span>Press Stop at any time.</span></footer>
     </main>
+    <dialog id="person-dialog" class="person-dialog" aria-labelledby="dialog-name">
+      <div class="dialog-panel">
+        <button id="dialog-close" class="dialog-close" aria-label="Close">×</button>
+        <div class="dialog-top">
+          <div class="avatar dialog-avatar"><div class="avatar-placeholder"></div><img id="dialog-photo" alt="" hidden /></div>
+          <div>
+            <div id="dialog-name" class="dialog-name"></div>
+            <div id="dialog-relation" class="card-relation"></div>
+            <div id="dialog-presence" class="presence"><i></i><span id="dialog-presence-text"></span></div>
+          </div>
+        </div>
+        <div id="dialog-body" class="dialog-body"></div>
+        <div class="dialog-foot"><span id="dialog-stats"></span><button id="dialog-forget" class="forget-button" hidden>Forget this photo</button></div>
+      </div>
+    </dialog>
     <script src="/web-assets/app.js" defer></script>
   </body>
 </html>
