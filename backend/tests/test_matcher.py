@@ -54,8 +54,9 @@ def test_conversation_is_labeled_by_face_at_onset_and_closed_by_silence(env):
 
     matcher.on_audio_time(8.5, in_speech=False)
     assert matcher.open_conversation is None
-    assert [e["type"] for e in events] == ["conversation_started", "conversation_ended"]
-    assert events[1]["ts"] == 3.0
+    assert [e["type"] for e in events] == ["conversation_started", "transcript", "conversation_ended"]
+    assert events[1]["text"] == "hello"
+    assert events[2]["ts"] == 3.0
     assert finalized == [conv]
 
 
@@ -121,4 +122,5 @@ def test_self_session_is_never_sent_for_persona(env):
     matcher.on_utterance(utterance(0.0, 2.0, "self"))
     matcher.on_audio_time(10.0, in_speech=False)
     assert events[0]["face_id"] is None
+    assert events[1]["type"] == "transcript"
     assert finalized == []

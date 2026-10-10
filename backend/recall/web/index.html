@@ -3,51 +3,66 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101821" />
-    <title>Recall-AI · Web capture</title>
+    <meta name="theme-color" content="#070d14" />
+    <title>Recall AI · Memory lens</title>
     <link rel="stylesheet" href="/web-assets/style.css" />
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
-        <div>
-          <div class="eyebrow">RECALL-AI · PRIVATE MEMORY</div>
-          <h1>People, in context.</h1>
-          <p class="subhead">A live view of the person in front of you and what you remember together.</p>
-        </div>
-        <div class="provider"><span class="dot"></span><span id="provider">Checking face module…</span></div>
+        <a class="brand" href="/" aria-label="Recall AI home"><span class="brand-mark">◈</span><span>RECALL<span class="brand-light">.AI</span></span></a>
+        <div class="topbar-right"><span id="provider" class="provider">Checking face module…</span><span class="local-chip"><i></i> LOCAL MEMORY</span></div>
       </header>
 
-      <section class="consent card">
-        <div class="consent-mark">i</div>
-        <div>
-          <strong>Choose before you capture</strong>
-          <p>Starting capture streams camera frames and microphone audio to this Recall-AI backend. Face matching uses the configured module. Stop capture at any time.</p>
-          <label class="check"><input id="consent" type="checkbox" /> I have permission to capture and process the people and conversation in view.</label>
-        </div>
+      <section class="intro">
+        <div><div class="eyebrow">A LITTLE MORE PRESENT</div><h1>See someone.<br /><em>Remember more.</em></h1></div>
+        <p class="intro-copy">Your memory lens recognizes familiar faces and brings the right conversation back into focus.</p>
       </section>
 
-      <section class="layout">
-        <section class="camera-card card">
-          <div class="section-head"><div><span class="step">01</span><h2>Live capture</h2></div><span id="connection" class="connection">Not connected</span></div>
-          <div class="video-wrap"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas><div id="placeholder" class="placeholder"><span class="camera-icon">◉</span><span>Camera preview appears here</span></div></div>
-          <div class="controls">
-            <button id="start" class="primary" disabled>Start camera & mic</button>
-            <button id="stop" class="secondary" disabled>Stop capture</button>
-            <button id="voice" class="tertiary" disabled>Enroll my voice · 10 sec</button>
+      <section class="consent glass">
+        <span class="consent-icon">⌁</span>
+        <div class="consent-copy"><strong>Your camera, your call.</strong><span>Live audio and video go to this backend. With consent, one representative camera frame is saved locally for each new person.</span></div>
+        <label class="consent-toggle"><input id="consent" type="checkbox" /><span class="toggle-ui"></span><span>I have permission to capture and save a frame for the focused person.</span></label>
+      </section>
+
+      <section class="workspace">
+        <section class="camera-panel glass">
+          <div class="panel-head"><div><span class="kicker">01 / LIVE VIEW</span><h2>Memory lens</h2></div><span id="connection" class="connection"><i></i> STANDBY</span></div>
+          <div class="camera-frame">
+            <video id="video" autoplay playsinline muted></video>
+            <div id="placeholder" class="camera-placeholder"><div class="aperture"><span></span><span></span><span></span></div><strong>Your view, with a little more memory.</strong><small>Start the camera when everyone is ready.</small></div>
+            <div class="camera-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <div id="recognition-toast" class="recognition-toast" aria-live="polite"></div>
+            <div class="camera-caption"><span class="live-pip"></span><span>LIVE FRAME</span><span class="caption-divider">/</span><span>ANALYSIS EVERY 5 SEC</span></div>
           </div>
-          <p class="hint">The browser samples a frame every 5 seconds and streams 16 kHz mono audio. Images are not saved by the web client.</p>
+          <div class="controls"><button id="start" class="primary" disabled><span>◉</span> Start camera & mic</button><button id="stop" class="secondary" disabled>Stop capture</button><button id="voice" class="tertiary" disabled>Enroll my voice · 10 sec</button></div>
+          <div class="capture-foot"><span id="event-log" aria-live="polite">Ready when you are.</span><span>Images are kept on this device’s backend.</span></div>
         </section>
 
-        <aside class="persona-card card">
-          <div class="section-head"><div><span class="step">02</span><h2>Recall</h2></div><span id="talking" class="talking">IDLE</span></div>
-          <div id="face-name" class="face-name">No face in view</div>
-          <div id="persona" class="persona"><p>Start capture to look up a familiar face and its saved persona.</p></div>
-          <div id="event-log" class="event-log" aria-live="polite">Waiting for the client to connect.</div>
+        <aside class="right-rail">
+          <section class="identity-panel glass">
+            <div class="panel-head"><div><span class="kicker">02 / IN FOCUS</span><h2>Person card</h2></div><span id="match-status" class="match-status">WAITING</span></div>
+            <div class="identity-card">
+              <div class="portrait-lens">
+                <img id="portrait" alt="Saved portrait of the person in focus" hidden />
+                <div id="portrait-placeholder" class="portrait-placeholder"><div class="lens-ring"><span></span></div><span>Waiting for a face</span></div>
+                <div class="lens-glint" aria-hidden="true"></div>
+                <span id="portrait-state" class="portrait-state">NO SAVED FRAME</span>
+              </div>
+              <div class="identity-meta"><div id="face-name" class="face-name">No one in focus</div><div class="identity-id"><span class="id-dot"></span><span id="face-id">ID —</span><span id="confidence">—</span></div></div>
+            </div>
+            <div class="memory-card"><div class="memory-label"><span>MEMORY SNAPSHOT</span><span id="memory-state">READY</span></div><div id="persona" class="persona"><p>When a familiar person appears, their saved details will show here.</p></div></div>
+            <button id="forget-portrait" class="forget-button" disabled>Forget saved portrait</button>
+          </section>
+
+          <section class="transcript-panel glass">
+            <div class="panel-head"><div><span class="kicker">03 / CONVERSATION</span><h2>Live transcript</h2></div><span id="talking" class="talking"><i></i> IDLE</span></div>
+            <div id="transcript" class="transcript" aria-live="polite" aria-relevant="additions"><div class="transcript-empty"><span class="sound-wave">∿</span><p>Your conversation will appear here as it’s heard.</p></div></div>
+            <div class="transcript-foot"><span>TRANSCRIBED LOCALLY</span><span id="transcript-count">0 LINES</span></div>
+          </section>
         </aside>
       </section>
-
-      <footer><span>Recall-AI web client</span><span>Camera and microphone access stay under your control.</span></footer>
+      <footer><span>RECALL.AI <span class="footer-muted">· memory, in the moment</span></span><span>Stop capture any time to end the stream.</span></footer>
     </main>
     <script src="/web-assets/app.js" defer></script>
   </body>
