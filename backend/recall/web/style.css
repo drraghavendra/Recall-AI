@@ -317,3 +317,10 @@ body.live .workspace { margin-top: 18px; }
 .card-line { -webkit-line-clamp: 1; }
 .person-card .listening { margin-top: 8px; }
 
+
+/* People list mode: "Everyone" grows with whoever is around and scrolls; "Top 3" fits without scrolling. */
+.people-head-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.people-mode { border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px; color: var(--muted); background: var(--surface); font: 700 14px var(--sans); cursor: pointer; }
+.people-mode:hover { border-color: var(--clay); color: var(--clay-dark); }
+.people-mode:focus-visible { outline: 3px solid var(--clay); outline-offset: 2px; }
+.people.everyone { max-height: 70vh; overflow-y: auto; padding-right: 4px; }

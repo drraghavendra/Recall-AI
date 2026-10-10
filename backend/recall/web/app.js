@@ -9,8 +9,10 @@
   const LIP_PERIOD_MS = 200;
   const LIP_HOLD_MS = 1500;
   const LIP_SOUND_RMS = 0.01;
-  // People cards: at most this many; a newcomer replaces someone only once we know something about them.
+  // People cards. "Everyone" mode: a card per person in view, dropped once they've been gone a while.
+  // Otherwise at most MAX_CARDS; a newcomer replaces someone only once we know something about them.
   const MAX_CARDS = 3;
+  const AWAY_REMOVE_MS = 60_000;
   const LISTENING_CLEAR_MS = 150_000;
   const $ = (id) => document.getElementById(id);
 
@@ -28,6 +30,7 @@
   const personas = new Map();
   const admitting = new Set();
   let present = new Set();
+  let showEveryone = true;
   let focusedId = null;
   let media = null;
   let socket = null;
@@ -336,9 +339,18 @@
     showToast(`${personName(faceId)} is here`);
   }
 
+  function removeCard(faceId) {
+    const card = cards.get(faceId);
+    if (!card) return;
+    clearTimeout(card.listeningTimer);
+    clearTimeout(card.heardTimer);
+    card.el.remove();
+    cards.delete(faceId);
+  }
+
   async function admit(faceId) {
     if (cards.has(faceId) || admitting.has(faceId)) return;
-    if (cards.size < MAX_CARDS) return addCard(faceId);
+    if (showEveryone || cards.size < MAX_CARDS) return addCard(faceId);
     admitting.add(faceId);
     try {
       const persona = await loadPersona(faceId);
@@ -356,6 +368,10 @@
     for (const [faceId, card] of cards) {
       const here = present.has(faceId);
       if (here) card.lastSeen = now;
+      if (showEveryone && !here && now - card.lastSeen > AWAY_REMOVE_MS && faceId !== dialogFace) {
+        removeCard(faceId);
+        continue;
+      }
       card.el.classList.toggle("here", here);
       card.el.classList.toggle("away", !here);
       card.el.classList.toggle("focused", faceId === focusedId);
@@ -381,6 +397,23 @@
       : "Looking…";
     $("specs-line").textContent = !focusedId ? "" : !goodPersona(persona) ? "Meeting for the first time"
       : persona.last_talked_about ? `Last time: ${persona.last_talked_about}` : persona.summary || "";
+  }
+
+  function setShowEveryone(on) {
+    showEveryone = on;
+    $("people-mode").setAttribute("aria-pressed", String(on));
+    $("people-mode").textContent = on ? "⇄ Showing everyone" : "⇄ Showing last 3";
+    $("people").classList.toggle("everyone", on);
+    try { localStorage.setItem("recall-people-mode", on ? "all" : "top"); } catch {}
+    if (!on && cards.size > MAX_CARDS) {
+      // Keep whoever is here, then the most recently seen.
+      const keep = new Set([...cards]
+        .sort((a, b) => Number(present.has(b[0])) - Number(present.has(a[0])) || b[1].lastSeen - a[1].lastSeen)
+        .slice(0, MAX_CARDS).map(([id]) => id));
+      for (const faceId of [...cards.keys()]) if (!keep.has(faceId)) removeCard(faceId);
+    }
+    for (const faceId of present) void admit(faceId);
+    updateCards();
   }
 
   function setSpecs(on) {
@@ -686,6 +719,10 @@
   $("person-dialog").addEventListener("close", () => { dialogFace = null; });
   $("specs-toggle").addEventListener("click", () => setSpecs($("specs").hidden));
   try { if (localStorage.getItem("recall-specs") === "1") setSpecs(true); } catch {}
+  $("people-mode").addEventListener("click", () => setShowEveryone(!showEveryone));
+  let savedMode = null;
+  try { savedMode = localStorage.getItem("recall-people-mode"); } catch {}
+  setShowEveryone(savedMode !== "top");
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });
 
   for (const id of Object.keys(PROVIDER_SELECTS)) $(id).addEventListener("change", (event) => void switchProvider(event.target));
