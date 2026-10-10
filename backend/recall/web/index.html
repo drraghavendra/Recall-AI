@@ -89,6 +89,17 @@
       </section>
       <footer><span>Recall <span class="footer-muted">· the people you love, close at hand</span></span><span>Press Stop at any time.</span></footer>
     </main>
+    <dialog id="voice-dialog" class="person-dialog voice-dialog" aria-labelledby="voice-title">
+      <div class="dialog-panel">
+        <button id="voice-close" class="dialog-close" aria-label="Close">×</button>
+        <div id="voice-title" class="dialog-name">Let’s learn your voice</div>
+        <p id="voice-hint" class="voice-hint">So your own words aren’t mistaken for someone else’s. Press <b>Start reading</b>, then read this aloud in your normal voice:</p>
+        <blockquote class="voice-script">“Good morning. I’m reading this so Recall can learn how my voice sounds. Today I’d like a cup of tea, a short walk outside, and a call with someone I care about.”</blockquote>
+        <div id="voice-progress" class="voice-progress" hidden><div class="voice-bar"><i id="voice-bar-fill"></i></div><span id="voice-count"></span></div>
+        <div class="dialog-foot"><span id="voice-status"></span><button id="voice-go" class="primary">Start reading</button></div>
+      </div>
+    </dialog>
+
     <dialog id="person-dialog" class="person-dialog" aria-labelledby="dialog-name">
       <div class="dialog-panel">
         <button id="dialog-close" class="dialog-close" aria-label="Close">×</button>

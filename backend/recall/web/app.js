@@ -108,9 +108,13 @@
   function sendAudio(pcm) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     const ts = audioEpoch + sentSamples / TARGET_RATE;
-    socket.send(JSON.stringify({ type: "audio", ts, pcm: bytesToBase64(pcm) }));
+    const enrolling = Boolean(voiceTimer && voiceParts);
+    if (enrolling) voiceParts.push(pcm.slice());
+    // While learning the user's voice, stream silence instead, so the passage they read isn't transcribed
+    // and credited to whoever is in view (the audio clock keeps running).
+    const sent = enrolling ? new Uint8Array(pcm.length) : pcm;
+    socket.send(JSON.stringify({ type: "audio", ts, pcm: bytesToBase64(sent) }));
     sentSamples += pcm.length / 2;
-    if (voiceTimer && voiceParts) voiceParts.push(pcm.slice());
   }
 
   function processAudio(event) {
@@ -621,6 +625,7 @@
       setStatus("On", "live");
       document.body.classList.add("live");
       appendLog("Camera is on");
+      void offerVoiceIfNeeded();
     } catch (error) {
       setStatus(error.message || "Could not start capture", "error");
       await stopCapture(false);
@@ -635,12 +640,7 @@
     present = new Set();
     focusedId = null;
     updateCards();
-    if (voiceTimer) {
-      clearTimeout(voiceTimer);
-      voiceTimer = null;
-      voiceParts = null;
-      $("voice").textContent = "Learn my voice";
-    }
+    closeVoiceDialog();
     if (processor) processor.disconnect();
     if (source) source.disconnect();
     if (mutedOutput) mutedOutput.disconnect();
@@ -663,30 +663,88 @@
     }
   }
 
-  async function enrollVoice() {
+  // "Learn my voice": a prompt with a passage to read; records VOICE_ENROLL_MS of the live mic audio.
+  const VOICE_ENROLL_MS = 10_000;
+  let voiceCountdown = null;
+  let voiceDone = false;
+  let voiceOffered = false;
+
+  function setVoiceStatus(text, kind = "") {
+    $("voice-status").textContent = text;
+    $("voice-status").className = kind;
+  }
+
+  function openVoiceDialog() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    voiceDone = false;
+    $("voice-go").textContent = "Start reading";
+    $("voice-go").disabled = false;
+    $("voice-progress").hidden = true;
+    setVoiceStatus("Takes about 10 seconds");
+    if (!$("voice-dialog").open) $("voice-dialog").showModal();
+  }
+
+  function cancelVoiceRecording() {
+    clearTimeout(voiceTimer);
+    clearInterval(voiceCountdown);
+    voiceTimer = voiceCountdown = null;
+    voiceParts = null;
+  }
+
+  function closeVoiceDialog() {
+    cancelVoiceRecording();
+    if ($("voice-dialog").open) $("voice-dialog").close();
+  }
+
+  function enrollVoice() {
+    if (voiceDone) return closeVoiceDialog();
+    if (!socket || socket.readyState !== WebSocket.OPEN || voiceTimer) return;
     voiceParts = [];
-    $("voice").disabled = true;
-    $("voice").textContent = "Listening… keep talking";
-    appendLog("Talk normally for about 10 seconds");
+    const started = performance.now();
+    $("voice-go").disabled = true;
+    $("voice-go").textContent = "Listening…";
+    $("voice-progress").hidden = false;
+    setVoiceStatus("Keep reading in your normal voice");
+    const tick = () => {
+      const left = Math.max(0, VOICE_ENROLL_MS - (performance.now() - started));
+      $("voice-bar-fill").style.width = `${100 - (left / VOICE_ENROLL_MS) * 100}%`;
+      $("voice-count").textContent = `${Math.ceil(left / 1000)}s`;
+    };
+    tick();
+    voiceCountdown = setInterval(tick, 250);
     voiceTimer = setTimeout(async () => {
-      voiceTimer = null;
-      const total = voiceParts.reduce((sum, part) => sum + part.length, 0);
+      clearInterval(voiceCountdown);
+      voiceTimer = voiceCountdown = null;
+      const parts = voiceParts || [];
+      voiceParts = null;
+      const total = parts.reduce((sum, part) => sum + part.length, 0);
       const audio = new Uint8Array(total);
       let offset = 0;
-      for (const part of voiceParts) { audio.set(part, offset); offset += part.length; }
-      voiceParts = null;
-      $("voice").textContent = "Learn my voice";
+      for (const part of parts) { audio.set(part, offset); offset += part.length; }
+      setVoiceStatus("Saving…");
       try {
         const response = await fetch("/self-voice", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: audio });
         if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+        voiceDone = true;
+        setVoiceStatus("Got it, I’ll know when it’s you talking", "ok");
+        $("voice-go").textContent = "Done";
         appendLog("Got it, I know your voice now");
       } catch (error) {
-        appendLog("Couldn’t learn your voice, please try again");
+        setVoiceStatus("Couldn’t hear enough. Try again somewhere quieter", "error");
+        $("voice-go").textContent = "Try again";
       } finally {
-        $("voice").disabled = !socket || socket.readyState !== WebSocket.OPEN;
+        $("voice-go").disabled = false;
       }
-    }, 10_000);
+    }, VOICE_ENROLL_MS);
+  }
+
+  async function offerVoiceIfNeeded() {
+    if (voiceOffered) return;
+    voiceOffered = true;
+    try {
+      const response = await fetch("/self-voice");
+      if (response.ok && !(await response.json()).enrolled) openVoiceDialog();
+    } catch {}
   }
 
   async function forgetPortrait(faceId) {
@@ -712,7 +770,10 @@
   $("consent").addEventListener("change", () => { $("start").disabled = !$("consent").checked || !!media; });
   $("start").addEventListener("click", beginCapture);
   $("stop").addEventListener("click", () => void stopCapture());
-  $("voice").addEventListener("click", enrollVoice);
+  $("voice").addEventListener("click", openVoiceDialog);
+  $("voice-go").addEventListener("click", enrollVoice);
+  $("voice-close").addEventListener("click", closeVoiceDialog);
+  $("voice-dialog").addEventListener("close", cancelVoiceRecording);
   setInterval(updateCards, 15000);
   $("dialog-close").addEventListener("click", () => $("person-dialog").close());
   $("dialog-forget").addEventListener("click", () => { if (dialogFace) void forgetPortrait(dialogFace); });

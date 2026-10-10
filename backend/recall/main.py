@@ -96,6 +96,11 @@ async def delete_face_portrait(face_id: str, request: Request) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no saved portrait for this face")
 
 
+@app.get("/self-voice")
+async def self_voice_status(request: Request) -> dict:
+    return {"enrolled": _services(request).db.get_self_voice() is not None}
+
+
 @app.post("/self-voice", status_code=status.HTTP_204_NO_CONTENT)
 async def enroll_self_voice(request: Request) -> None:
     """Body: raw 16 kHz mono s16le PCM of the user speaking (a few seconds)."""
