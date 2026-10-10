@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from recall.audio.pcm import pcm16_to_float
 from recall.config import Settings
 from recall.protocol import FramesMessage, inbound_adapter
+from recall.providers import ProviderChoice, ProviderError
 from recall.wiring import Services, build_services
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -46,9 +47,25 @@ def _services(holder: Request | WebSocket) -> Services:
 
 
 @app.get("/health")
-async def health() -> dict:
-    settings = Settings()
-    return {"status": "ok", "face_backend": settings.face_backend, "stt_backend": settings.stt_backend}
+async def health(request: Request) -> dict:
+    return {"status": "ok", **_services(request).providers.current}
+
+
+@app.get("/providers")
+async def get_providers(request: Request) -> dict:
+    providers = _services(request).providers
+    return {**providers.current, "options": providers.options()}
+
+
+@app.put("/providers")
+async def switch_providers(choice: ProviderChoice, request: Request) -> dict:
+    """Switch the live face and/or speech-to-text provider. The first switch to a provider loads its model."""
+    providers = _services(request).providers
+    try:
+        await providers.switch(choice)
+    except ProviderError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    return {**providers.current, "options": providers.options()}
 
 
 @app.get("/persona/{face_id}")

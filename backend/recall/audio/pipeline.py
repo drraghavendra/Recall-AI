@@ -46,6 +46,10 @@ class AudioPipeline:
         self._queue: asyncio.Queue[tuple[float, bytes] | None] = asyncio.Queue()
         self._clear_stream()
 
+    def set_transcriber(self, transcriber: Transcriber) -> None:
+        """Swap the provider at runtime; an utterance already being transcribed finishes on the old one."""
+        self._transcriber = transcriber
+
     def submit(self, ts: float, pcm: bytes) -> None:
         self._queue.put_nowait((ts, pcm))
 

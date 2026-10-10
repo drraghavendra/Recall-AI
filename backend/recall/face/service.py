@@ -30,6 +30,10 @@ class FaceService:
         self._frames_per_window = frames_per_window
         self._queue: asyncio.Queue[tuple[float, list[bytes], bool]] = asyncio.Queue(maxsize=max_pending_windows)
 
+    def set_recognizer(self, recognizer: FaceRecognizer) -> None:
+        """Swap the provider at runtime; a window already in progress finishes on the old one."""
+        self._recognizer = recognizer
+
     def submit(self, ts: float, jpegs: list[bytes], store_portrait: bool = False) -> None:
         # Stale windows are worthless for a live overlay — drop the oldest instead of falling behind.
         if self._queue.full():
