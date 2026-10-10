@@ -129,7 +129,11 @@ def build_services(settings: Settings) -> Services:
     lips = None
     mouth_landmarks_all = getattr(recognizer, "mouth_landmarks_all", None)
     if settings.lip_check and mouth_landmarks_all is not None:
-        lips = LipService(mouth_landmarks_all, face.known_boxes, LipActivityTracker(settings.lip_min_openness_std))
+        lips = LipService(mouth_landmarks_all, face.known_boxes, LipActivityTracker(
+                settings.lip_min_openness_std,
+                min_talking_fraction=settings.lip_min_talking_fraction,
+                min_sync=settings.lip_min_sync,
+            ))
 
     persona = PersonaService(
         db,

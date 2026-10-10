@@ -2,6 +2,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from recall.audio.level import ENVELOPE_HOP_S
 from recall.audio.types import Utterance
 from recall.face.lips import LipActivityTracker
 
@@ -52,6 +53,6 @@ class AttributionGate:
         focused = self._focused_during(utterance.start, utterance.end) if self._focused_during else None
         if focused is None:
             return Verdict()
-        if self._lips.face_talking(focused, utterance.start, utterance.end) is False:
+        if self._lips.face_talking(focused, utterance.start, utterance.end, utterance.envelope, ENVELOPE_HOP_S) is False:
             return Verdict(reason="lips_still")
         return Verdict(face_id=focused)

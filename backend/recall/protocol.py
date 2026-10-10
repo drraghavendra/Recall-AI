@@ -21,7 +21,7 @@ class AudioMessage(BaseModel):
 
 
 class LipFramesMessage(BaseModel):
-    """One frame from a short burst (~5 fps) sent while the client hears sound, for the lip check."""
+    """One frame from a short burst (~10 fps) sent while the client hears sound, for the lip check."""
 
     type: Literal["lip_frames"]
     ts: float

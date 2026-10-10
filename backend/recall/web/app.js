@@ -4,9 +4,9 @@
   // Webcams start dark while auto-exposure settles; frames sent right away gave black saved photos.
   const CAMERA_WARMUP_MS = 2000;
   const AUDIO_CHUNK_SAMPLES = 1600;
-  // Lip check: while the mic hears sound, send small frames at ~5 fps so the backend can tell whether
+  // Lip check: while the mic hears sound, send small frames at ~10 fps so the backend can tell whether
   // the person in focus is the one talking.
-  const LIP_PERIOD_MS = 200;
+  const LIP_PERIOD_MS = 100;
   const LIP_HOLD_MS = 1500;
   const LIP_SOUND_RMS = 0.01;
   // People cards. "Everyone" mode: a card per person in view, dropped once they've been gone a while.

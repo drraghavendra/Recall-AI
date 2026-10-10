@@ -21,6 +21,8 @@ class Utterance:
     text: str
     speaker: Speaker
     level_dbfs: float | None = None
+    # RMS loudness every `ENVELOPE_HOP_S` from `start` (see audio/level.py), for the lip/sound sync check.
+    envelope: tuple[float, ...] | None = None
 
 
 class VoiceActivityDetector(Protocol):

@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     vad_threshold: float = 0.5
     vad_min_silence_ms: int = 600
     vad_speech_pad_ms: int = 100
-    max_utterance_s: float = 15.0
+    # Long speech is cut into pieces this long, so each piece is transcribed, lip-checked and shown sooner.
+    max_utterance_s: float = 6.0
 
     # Speech-to-text provider selected by the transcriber factory. Whisper and Parakeet run locally;
     # Sarvam is a paid API (key from SARVAM_API_KEY in the environment, like the other SDK credentials).
@@ -62,13 +63,19 @@ class Settings(BaseSettings):
     # Off by default: the browser's auto gain (needed so quiet mics give usable speech) makes loudness a
     # poor near/far signal. Set it (e.g. -50) only for clients that send un-normalised audio.
     min_other_speech_dbfs: float | None = None
-    # Lip check (InsightFace only): the client sends ~5 fps lip frames while it hears sound. Speech during
-    # which the focused face's mouth openness (inner-lip gap / mouth width) barely varied is background.
+    # Lip check (InsightFace only): the client sends ~10 fps lip frames while it hears sound. A line is the
+    # focused face's only if its mouth openness (inner-lip gap / mouth width) varied by at least
+    # `lip_min_openness_std` in `lip_min_talking_fraction` of the 1 s slices with sound, and (when there are
+    # enough frames) rose and fell in step with the loudness: correlation >= `lip_min_sync`. Otherwise it's
+    # background. Every line logs both numbers ("lip check ...") for tuning.
     lip_check: bool = True
     # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
     # True: speech goes to whichever face's mouth moved most.
     lip_picks_speaker: bool = False
     lip_min_openness_std: float = 0.02
+    lip_min_talking_fraction: float = 0.4
+    # None turns the sync check off.
+    lip_min_sync: float | None = 0.1
 
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
     # Sonnet is plenty for a short profile and faster than Opus. The persona job runs `persona_batch_s`
