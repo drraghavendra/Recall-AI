@@ -161,7 +161,7 @@ Options (put `--server` **before** the subcommand):
 ```bash
 python -m recall_client --server http://192.168.1.20:8000 run --camera 1 --window 5 --frames 1
 ```
-Face sampling defaults to **1 frame every 5 seconds** (~720 Rekognition calls/hour). Use
+Face sampling defaults to **1 frame per second** (~3,600 Rekognition calls/hour if you use AWS; free with InsightFace). Use
 `--window` (seconds) and `--frames` (frames per window) to change it. Press **q** or **Esc** in
 the video window to quit. Only **one** capture client can connect
 at a time.

@@ -33,7 +33,7 @@ One-time: enroll your own voice, so your words stay out of other people's person
 
 ## What it does
 
-- **Camera:** every `--window` seconds (default 5), grabs `--frames` (default 1) frames spread
+- **Camera:** every `--window` seconds (default 1), grabs `--frames` (default 1) frames spread
   across the window, downsizes them to 640px JPEGs, and sends one `frames` message.
 - **Mic:** 16 kHz mono s16le in 100ms blocks, sent continuously. Timestamps are anchored by
   sample count so chunks stay gapless (re-anchored after an input overflow).
