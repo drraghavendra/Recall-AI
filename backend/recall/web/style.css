@@ -266,3 +266,6 @@ details.transcript-panel[open] .kicker:before { content: "Conversation · tap to
 .specs-toggle[aria-pressed="true"] { color: #fff; background: #5b3a26; border-color: #5b3a26; }
 
 .camera-caption, .recognition-toast { z-index: 3; }
+/* The silhouette's shoulders hang below .lens-ring (absolutely positioned), so reserve room for them. */
+.people-empty { gap: 16px; }
+.people-empty .lens-ring { margin: 0 0 42px; }
