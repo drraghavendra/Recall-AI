@@ -21,6 +21,7 @@ from recall.face.tracker import FocusedFaceTracker
 from recall.matching.matcher import ConversationMatcher
 from recall.persona.llm import ClaudePersonaWriter
 from recall.persona.service import PersonaService
+from recall.providers import ProviderSwitcher
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class Services:
     matcher: ConversationMatcher
     persona: PersonaService
     self_voice: SelfVoiceClassifier
+    providers: ProviderSwitcher
     capture_client_connected: bool = False
     _tasks: list[asyncio.Task] = field(default_factory=list)
 
@@ -116,7 +118,8 @@ def build_services(settings: Settings) -> Services:
     hub = EventHub()
     tracker = FocusedFaceTracker(settings.face_confirm_windows, settings.face_absent_confirm_windows)
 
-    face = FaceService(_build_recognizer(settings), tracker, db, hub.publish, settings.frames_per_window)
+    recognizer = _build_recognizer(settings)
+    face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window)
 
     persona = PersonaService(
         db,
@@ -143,12 +146,24 @@ def build_services(settings: Settings) -> Services:
     if stored_profile is None:
         log.warning("no self voice enrolled yet: all speech will be treated as 'other' (POST /self-voice)")
 
+    transcriber = _build_transcriber(settings)
     audio = AudioPipeline(
         SileroVad(settings.vad_threshold, settings.vad_min_silence_ms, settings.vad_speech_pad_ms, settings.sample_rate),
-        _build_transcriber(settings),
+        transcriber,
         self_voice,
         matcher,
         settings.sample_rate,
         settings.max_utterance_s,
     )
-    return Services(settings, db, hub, face, audio, matcher, persona, self_voice)
+    providers = ProviderSwitcher(
+        face,
+        audio,
+        lambda name: _build_recognizer(settings.model_copy(update={"face_backend": name})),
+        lambda name: _build_transcriber(settings.model_copy(update={"stt_backend": name})),
+        hub.publish,
+        settings.face_backend,
+        recognizer,
+        settings.stt_backend,
+        transcriber,
+    )
+    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers)

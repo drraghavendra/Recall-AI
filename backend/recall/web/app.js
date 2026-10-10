@@ -221,6 +221,45 @@
     showToast(event.speaker === "self" ? `You said · “${event.text}”` : `${personName(event.face_id)} · “${event.text}”`);
   }
 
+  const PROVIDER_SELECTS = { "face-backend": "face_backend", "stt-backend": "stt_backend" };
+
+  function showProviders(state) {
+    for (const [id, field] of Object.entries(PROVIDER_SELECTS)) {
+      if (!state[field]) continue;
+      $(id).value = state[field];
+      $(id).dataset.current = state[field];
+      $(id).disabled = false;
+    }
+    if (state.stt_backend) {
+      $("stt-provider").textContent = state.stt_backend === "sarvam" ? "TRANSCRIBED BY SARVAM API" : `TRANSCRIBED LOCALLY · ${state.stt_backend.toUpperCase()}`;
+    }
+  }
+
+  async function switchProvider(select) {
+    const field = PROVIDER_SELECTS[select.id];
+    const label = select.selectedOptions[0].textContent;
+    for (const id of Object.keys(PROVIDER_SELECTS)) $(id).disabled = true;
+    appendLog(`Switching to ${label}… the first switch loads its model and can take a while.`);
+    try {
+      const response = await fetch("/providers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: select.value }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${response.status}`);
+      showProviders(body);
+      appendLog(field === "face_backend"
+        ? `Face module: ${label}. Faces saved by other modules are not recognized by this one.`
+        : `Speech module: ${label}.`);
+    } catch (error) {
+      select.value = select.dataset.current;
+      appendLog(error.message);
+    } finally {
+      for (const id of Object.keys(PROVIDER_SELECTS)) $(id).disabled = !$(id).dataset.current;
+    }
+  }
+
   function handleEvent(event) {
     if (event.type === "face_update") {
       if (event.face_id !== currentFaceId) {
@@ -248,6 +287,8 @@
       }
       if (event.face_id) showPortrait(event.portrait_url);
       appendLog(event.face_id ? `${personName(event.face_id)} recognized` : "No face currently in focus");
+    } else if (event.type === "providers_changed") {
+      showProviders(event);
     } else if (event.type === "transcript") {
       addTranscript(event);
     } else if (event.type === "persona_updated") {
@@ -398,8 +439,8 @@
   $("forget-portrait").addEventListener("click", forgetPortrait);
   window.addEventListener("beforeunload", () => { if (media) void stopCapture(false); });
 
-  fetch("/health").then((response) => response.json()).then((health) => {
-    $("provider").textContent = `FACE MODULE · ${health.face_backend || "CONFIGURED"}`;
-    if (health.stt_backend) $("stt-provider").textContent = health.stt_backend === "sarvam" ? "TRANSCRIBED BY SARVAM API" : `TRANSCRIBED LOCALLY · ${health.stt_backend.toUpperCase()}`;
-  }).catch(() => { $("provider").textContent = "FACE MODULE · OFFLINE"; });
+  for (const id of Object.keys(PROVIDER_SELECTS)) $(id).addEventListener("change", (event) => void switchProvider(event.target));
+  fetch("/providers").then((response) => response.json()).then(showProviders).catch(() => {
+    appendLog("Could not read the active face and speech modules.");
+  });
 })();

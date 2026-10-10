@@ -11,7 +11,7 @@
     <main class="shell">
       <header class="topbar">
         <a class="brand" href="/" aria-label="Recall AI home"><span class="brand-mark">◈</span><span>RECALL<span class="brand-light">.AI</span></span></a>
-        <div class="topbar-right"><span id="provider" class="provider">Checking face module…</span><span class="local-chip"><i></i> LOCAL MEMORY</span></div>
+        <div class="topbar-right"><label class="provider-select" title="Face recognition module. Faces saved by one module are not recognized by another."><span>FACE</span><select id="face-backend" disabled><option value="insightface">InsightFace · local</option><option value="rekognition">AWS Rekognition</option><option value="mock">Mock</option></select></label><label class="provider-select" title="Speech-to-text module for the live transcript."><span>SPEECH</span><select id="stt-backend" disabled><option value="whisper">Whisper · local</option><option value="parakeet">Parakeet · local</option><option value="sarvam">Sarvam API</option></select></label><span class="local-chip"><i></i> LOCAL MEMORY</span></div>
       </header>
 
       <section class="intro">

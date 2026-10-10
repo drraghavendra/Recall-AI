@@ -56,6 +56,13 @@ export RECALL_STT_BACKEND=parakeet
 Each provider implements the `Transcriber` protocol in `audio/types.py` and is imported only when
 selected, so adding another one is a new module plus a branch in `wiring._build_transcriber`.
 
+`RECALL_FACE_BACKEND` / `RECALL_STT_BACKEND` set the providers at startup; users can also switch
+either one live from the browser's **Face** / **Speech** menus (`PUT /providers`). The first switch
+to a provider loads its model (minutes if it still has to download); it then stays cached, so
+switching back is instant. If a provider can't start (missing AWS credentials, Sarvam key or
+extra), the current one stays active and the error is shown. Each face provider keeps its own
+identities, so people saved under one are new to another. Live switches last until restart.
+
 `--workers 1` is required: the focused face, the open conversation and the persona locks
 are in-process state. First start downloads the Whisper and Silero models and creates the
 Rekognition collection.
@@ -97,7 +104,9 @@ long-lived WebSocket, in-process state and background tasks.
 | `WS /ws` | Capture client. One at a time. |
 | `GET /persona/{face_id}` | 404 = no persona yet → "You're meeting them for the first time" |
 | `POST /self-voice` | Raw 16 kHz mono s16le PCM, ≥3s |
-| `GET /health` | Backend status and selected face provider. |
+| `GET /health` | Backend status and the active face / speech-to-text providers. |
+| `GET /providers` | Active providers plus the available options. |
+| `PUT /providers` | `{"face_backend"?: ..., "stt_backend"?: ...}` switches live; 400 if a provider can't start. Pushes `providers_changed`. |
 | `GET /` | Browser capture client. |
 
 **Client → server** (JSON text frames):

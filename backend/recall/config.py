@@ -2,6 +2,9 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+FaceBackend = Literal["rekognition", "insightface", "mock"]
+SttBackend = Literal["whisper", "parakeet", "sarvam"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="RECALL_", env_file=".env", extra="ignore")
@@ -9,7 +12,7 @@ class Settings(BaseSettings):
     db_path: str = "recall.db"
 
     # Face provider selected by the recognizer factory. InsightFace runs locally; Rekognition uses AWS.
-    face_backend: Literal["rekognition", "insightface", "mock"] = "rekognition"
+    face_backend: FaceBackend = "rekognition"
     mock_face_count: int = 3
     mock_face_hold_windows: int = 6
 
@@ -35,7 +38,7 @@ class Settings(BaseSettings):
 
     # Speech-to-text provider selected by the transcriber factory. Whisper and Parakeet run locally;
     # Sarvam is a paid API (key from SARVAM_API_KEY in the environment, like the other SDK credentials).
-    stt_backend: Literal["whisper", "parakeet", "sarvam"] = "whisper"
+    stt_backend: SttBackend = "whisper"
     whisper_model: str = "base.en"
     parakeet_model: str = "nemo-parakeet-tdt-0.6b-v2"
     parakeet_quantization: str | None = "int8"
