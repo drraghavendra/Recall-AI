@@ -1,8 +1,8 @@
 # Recall-AI backend
 
 One FastAPI process implementing [DESIGN.md](../DESIGN.md): an always-on **read path**
-(frames → faceId → persona) and a VAD-triggered **write path** (speech → conversation →
-transcript ↔ face matching → persona update). Face recognition is selected with
+(frames → faceId → persona) and a **write path** (speech → transcript lines tagged with the face in
+focus → a persona job every `RECALL_PERSONA_CYCLE_S`, default 90s). Face recognition is selected with
 `RECALL_FACE_BACKEND`: AWS Rekognition (default), local InsightFace, or Mock. The persona LLM is
 Claude; VAD, transcription and the self/other voice check run locally.
 
@@ -75,7 +75,7 @@ ffmpeg -f avfoundation -i ":0" -t 10 -ar 16000 -ac 1 -f s16le me.pcm
 curl --data-binary @me.pcm -H "Content-Type: application/octet-stream" localhost:8000/self-voice
 ```
 
-Tests cover the pure logic (tracker, conversation lifecycle, persona watermark) and make no
+Tests cover the pure logic (trackers, conversation lifecycle, persona job, attribution) and make no
 AWS/Claude calls. They don't need the heavy `[ml]` extra (torch, Whisper, Resemblyzer):
 
 ```bash
@@ -120,14 +120,19 @@ Send one `frames` message per sampling window (client default: 1 frame / 1s, set
 `--window` / `--frames`) and audio continuously
 with no gaps, using the same clock (`time.time()`) for both `ts`.
 
-**Server → client**: `face_update {ts, face_id, is_new, confidence, portrait_url}`,
+**Server → client**: `face_update {ts, face_id, is_new, confidence, portrait_url, others, focused,
+present}` — `face_id`/`others` are this frame's raw matches; `focused` and `present` are debounced
+(2 frames to appear, 3 to disappear) and are what a UI should render from,
 `conversation_started` / `conversation_ended {conv_id, face_id, ts}`,
 `transcript {ts, end_ts, text, speaker, face_id}`,
-`persona_updated {face_id, persona}`.
+`persona_updated {face_id, persona}` (only when Claude actually added something).
 
-Client read-path rule: on `face_update`, fetch `/persona/{face_id}` only when the face
-changed; refetch on `persona_updated` for the face on screen, plus a 3–4 min cache TTL as
-a safety net.
+Personas are structured: `names`, `nickname`, `relation`, fact groups `work` / `family` /
+`interests` / `plans` / `other`, `last_talked_about`, `summary`, plus `times_met` and `last_seen`
+from our own records. `key_facts` (all groups flattened) is kept for older clients.
+
+Client read-path rule: fetch `/persona/{face_id}` when a face first appears; after that, apply
+`persona_updated` pushes, plus a 3–4 min cache TTL as a safety net.
 
 ## Layout
 
@@ -136,7 +141,7 @@ a safety net.
 | `face/` | Sharpest frame(s) → selected provider search/enroll → debounced `FocusedFaceTracker` timeline | `FaceRecognizer` |
 | `audio/` | Silero VAD utterances → selected speech-to-text (faster-whisper, Parakeet or Sarvam) + Resemblyzer self/other. Interfaces in `audio/types.py` (import-light); concrete models in `vad.py`, `transcriber.py`, `parakeet.py`, `sarvam.py`, `speaker.py` | `VoiceActivityDetector`, `Transcriber`, `SpeakerEncoder` |
 | `matching/` | Conversation lifecycle: speech decides *when*, face timeline decides *who*, handoffs | — |
-| `persona/` | Watermarked incremental updates via Claude structured output | `PersonaWriter` |
+| `persona/` | One background job: every cycle, new lines grouped by face → Claude decides whether they add anything (structured output with a `changed` flag) → save and push only real changes. Each face's bookmark advances only after a successful call | `PersonaWriter` |
 | `db.py` | SQLite schema + queries | — |
 | `wiring.py` | Builds and starts everything; the only place concrete classes are chosen | — |
 
@@ -149,9 +154,20 @@ a safety net.
 - **A conversation opens when a ≥`min_speech_duration` utterance completes**, back-dated to
   its onset, rather than mid-utterance. Same result, simpler, but the
   `conversation_started` event can lag by up to `RECALL_MAX_UTTERANCE_S` during a monologue.
-- **The persona model is `claude-opus-5-5` at low effort**, with server-side refusal
+- **The persona model is `claude-sonnet-5-5` at low effort**, updated about once a minute mid-conversation, with server-side refusal
   fallbacks enabled (`fallbacks="default"`). Override with `RECALL_ANTHROPIC_MODEL` /
   `RECALL_PERSONA_EFFORT`.
+- **Someone else's speech is only attributed to the focused face if it passes two checks**: it is
+  louder than `RECALL_MIN_OTHER_SPEECH_DBFS` (off by default, since the browser normalises loudness), and (InsightFace only) the face's mouth opened and closed while
+  it was spoken. The browser client sends ~5 fps `lip_frames` while it hears sound for the second
+  check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
+  are heuristics; tune them with the per-utterance `level` and `lip check` log lines.
+- **The focused face** (`RECALL_FOCUS_RULE`) is the one nearest the centre of the frame, among faces
+  at least half as tall as the largest — on glasses, the person you're looking at. It is the face
+  that gets enrolled, photographed and credited with other people's speech (InsightFace only;
+  Rekognition always uses the largest face).
+- **Other known faces in frame** are listed in `face_update.others` (display only: only the focused
+  face is enrolled or attributed speech). Needs a provider with `search_all` (InsightFace).
 - **Transcription must keep up with real time** or the write path falls progressively
   behind (it never drops audio). `base.en` is fine on Apple Silicon; go smaller if not.
 - A failed *final* persona update isn't retried (there's no later run for a closed

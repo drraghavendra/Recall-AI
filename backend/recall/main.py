@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from recall.audio.pcm import pcm16_to_float
 from recall.config import Settings
-from recall.protocol import FramesMessage, inbound_adapter
+from recall.protocol import FramesMessage, LipFramesMessage, inbound_adapter
 from recall.providers import ProviderChoice, ProviderError
 from recall.wiring import Services, build_services
 
@@ -48,7 +48,8 @@ def _services(holder: Request | WebSocket) -> Services:
 
 @app.get("/health")
 async def health(request: Request) -> dict:
-    return {"status": "ok", **_services(request).providers.current}
+    services = _services(request)
+    return {"status": "ok", **services.providers.current, "lip_check": services.lips is not None}
 
 
 @app.get("/providers")
@@ -147,6 +148,10 @@ def _route(services: Services, raw: str) -> None:
                 [base64.b64decode(f, validate=True) for f in message.frames],
                 store_portrait=message.store_portrait,
             )
+            return
+        if isinstance(message, LipFramesMessage):
+            if services.lips is not None:
+                services.lips.submit(message.ts, base64.b64decode(message.frame, validate=True))
             return
         pcm = base64.b64decode(message.pcm, validate=True)
     except (ValidationError, binascii.Error) as e:

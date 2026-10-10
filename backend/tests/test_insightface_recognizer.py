@@ -83,3 +83,42 @@ def test_low_detection_score_face_is_ignored(tmp_path, monkeypatch):
 
     assert recognizer.enroll(b"jpeg", "person_001") is None
     assert recognizer.search(b"jpeg").face_found is False
+
+
+class TwoFaceApp:
+    """A large face (embedding a) and a smaller one (embedding b)."""
+
+    def __init__(self, a, b):
+        self.faces = [
+            SimpleNamespace(bbox=np.array([0, 0, 2, 2]), normed_embedding=b),
+            SimpleNamespace(bbox=np.array([0, 0, 10, 10]), normed_embedding=a),
+        ]
+
+    def get(self, _image):
+        return self.faces
+
+
+def test_search_all_matches_every_face_largest_first(tmp_path, monkeypatch):
+    fake_cv2(monkeypatch)
+    recognizer = InsightFaceRecognizer(str(tmp_path / "faces.sqlite3"), face_app=FakeFaceApp([1.0, 0.0]))
+    recognizer.enroll(b"jpeg", "person_001")
+    recognizer._face_app = FakeFaceApp([0.0, 1.0])
+    recognizer.enroll(b"jpeg", "person_002")
+    recognizer._face_app = TwoFaceApp([0.0, 1.0], [1.0, 0.0])
+
+    hits = recognizer.search_all(b"jpeg")
+
+    assert [hit.result.face_id for hit in hits] == ["person_002", "person_001"]
+    assert recognizer.search(b"jpeg").face_id == "person_002"
+
+
+def test_focused_face_is_the_one_nearest_the_centre_unless_much_smaller():
+    from recall.face.insightface import focused_first
+
+    left_big = ((0.05, 0.3, 0.2, 0.40), "left, biggest")
+    centre = ((0.42, 0.3, 0.16, 0.30), "centre")
+    tiny_centre = ((0.48, 0.45, 0.04, 0.08), "tiny, dead centre")
+    faces = [left_big, centre, tiny_centre]  # largest first, as detected
+    assert focused_first(faces, "center")[0] == centre
+    assert focused_first(faces, "largest")[0] == left_big
+    assert focused_first([left_big, tiny_centre], "center")[0] == left_big

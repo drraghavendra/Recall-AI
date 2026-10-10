@@ -13,11 +13,13 @@ from recall.audio.vad import SileroVad
 from recall.config import Settings
 from recall.db import Database
 from recall.events import EventHub
+from recall.face.lips import LipActivityTracker, LipService
 from recall.face.mock import MockRecognizer
 from recall.face.recognizer import FaceRecognizer
 from recall.face.rekognition import RekognitionRecognizer
 from recall.face.service import FaceService
-from recall.face.tracker import FocusedFaceTracker
+from recall.face.tracker import FocusedFaceTracker, PresenceTracker
+from recall.matching.attribution import AttributionGate
 from recall.matching.matcher import ConversationMatcher
 from recall.persona.llm import ClaudePersonaWriter
 from recall.persona.service import PersonaService
@@ -37,6 +39,7 @@ class Services:
     persona: PersonaService
     self_voice: SelfVoiceClassifier
     providers: ProviderSwitcher
+    lips: LipService | None = None
     capture_client_connected: bool = False
     _tasks: list[asyncio.Task] = field(default_factory=list)
 
@@ -44,10 +47,10 @@ class Services:
         self._tasks = [
             asyncio.create_task(self.face.run(), name="face"),
             asyncio.create_task(self.audio.run(), name="audio"),
-            asyncio.create_task(
-                self.persona.checkpoint_loop(lambda: self.matcher.open_conversation), name="persona-checkpoints"
-            ),
+            asyncio.create_task(self.persona.run(), name="persona-cycle"),
         ]
+        if self.lips is not None:
+            self._tasks.append(asyncio.create_task(self.lips.run(), name="lips"))
         for task in self._tasks:
             task.add_done_callback(_log_unexpected_exit)
 
@@ -80,6 +83,7 @@ def _build_recognizer(settings: Settings) -> FaceRecognizer:
             settings.local_face_match_threshold,
             settings.local_face_new_face_threshold,
             settings.local_face_min_det_score,
+            focus=settings.focus_rule,
         )
     recognizer = RekognitionRecognizer(
         settings.rekognition_collection_id, settings.aws_region, settings.face_match_threshold
@@ -119,14 +123,19 @@ def build_services(settings: Settings) -> Services:
     tracker = FocusedFaceTracker(settings.face_confirm_windows, settings.face_absent_confirm_windows)
 
     recognizer = _build_recognizer(settings)
-    face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window)
+    presence = PresenceTracker(settings.face_confirm_windows, settings.face_absent_confirm_windows)
+    face = FaceService(recognizer, tracker, db, hub.publish, settings.frames_per_window, presence=presence)
+
+    lips = None
+    mouth_landmarks_all = getattr(recognizer, "mouth_landmarks_all", None)
+    if settings.lip_check and mouth_landmarks_all is not None:
+        lips = LipService(mouth_landmarks_all, face.known_boxes, LipActivityTracker(settings.lip_min_openness_std))
 
     persona = PersonaService(
         db,
         hub.publish,
         ClaudePersonaWriter(settings.anthropic_model, settings.persona_effort),
-        settings.persona_update_interval_s,
-        settings.persona_min_new_segments,
+        settings.persona_cycle_s,
     )
     matcher = ConversationMatcher(
         db,
@@ -134,7 +143,15 @@ def build_services(settings: Settings) -> Services:
         settings.min_speech_duration_s,
         settings.min_silence_duration_s,
         hub.publish,
-        persona.on_conversation_finalized,
+        lambda _conv: persona.request_run(),  # a conversation just ended: don't wait for the cycle
+        gate=AttributionGate(
+            settings.min_other_speech_dbfs,
+            None if lips is None else lips.tracker,
+            settings.lip_picks_speaker,
+            # The focused face for most of the line, else whoever was focused when it started.
+            lambda start, end: db.majority_face(start, end) or tracker.face_at(start),
+        ),
+        max_utterance_s=settings.max_utterance_s,
     )
 
     stored_profile = db.get_self_voice()
@@ -166,4 +183,4 @@ def build_services(settings: Settings) -> Services:
         settings.stt_backend,
         transcriber,
     )
-    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers)
+    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers, lips)

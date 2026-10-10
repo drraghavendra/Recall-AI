@@ -20,5 +20,13 @@ class AudioMessage(BaseModel):
     pcm: str = Field(description="base64-encoded 16 kHz mono signed 16-bit little-endian PCM")
 
 
-InboundMessage = Annotated[FramesMessage | AudioMessage, Field(discriminator="type")]
+class LipFramesMessage(BaseModel):
+    """One frame from a short burst (~5 fps) sent while the client hears sound, for the lip check."""
+
+    type: Literal["lip_frames"]
+    ts: float
+    frame: str = Field(description="base64-encoded JPEG")
+
+
+InboundMessage = Annotated[FramesMessage | AudioMessage | LipFramesMessage, Field(discriminator="type")]
 inbound_adapter: TypeAdapter[InboundMessage] = TypeAdapter(InboundMessage)

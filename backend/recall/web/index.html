@@ -3,67 +3,107 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#070d14" />
-    <title>Recall AI · Memory lens</title>
+    <meta name="theme-color" content="#f4ede1" />
+    <title>Recall · Friendly faces</title>
     <link rel="stylesheet" href="/web-assets/style.css" />
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
-        <a class="brand" href="/" aria-label="Recall AI home"><span class="brand-mark">◈</span><span>RECALL<span class="brand-light">.AI</span></span></a>
-        <div class="topbar-right"><label class="provider-select" title="Face recognition module. Faces saved by one module are not recognized by another."><span>FACE</span><select id="face-backend" disabled><option value="insightface">InsightFace · local</option><option value="rekognition">AWS Rekognition</option><option value="mock">Mock</option></select></label><label class="provider-select" title="Speech-to-text module for the live transcript."><span>SPEECH</span><select id="stt-backend" disabled><option value="whisper">Whisper · local</option><option value="parakeet">Parakeet · local</option><option value="sarvam">Sarvam API</option></select></label><span class="local-chip"><i></i> LOCAL MEMORY</span></div>
+        <a class="brand" href="/" aria-label="Recall AI home"><span class="brand-mark">❀</span><span>Recall</span></a>
+        <div class="topbar-right"><label class="provider-select" title="Face recognition module. Faces saved by one module are not recognized by another."><span>Faces</span><select id="face-backend" disabled><option value="insightface">InsightFace · local</option><option value="rekognition">AWS Rekognition</option><option value="mock">Mock</option></select></label><label class="provider-select" title="Speech-to-text module for the transcript."><span>Speech</span><select id="stt-backend" disabled><option value="whisper">Whisper · local</option><option value="parakeet">Parakeet · local</option><option value="sarvam">Sarvam · online</option></select></label><span class="local-chip"><i></i> Kept on this device</span></div>
       </header>
 
       <section class="intro">
-        <div><div class="eyebrow">A LITTLE MORE PRESENT</div><h1>See someone.<br /><em>Remember more.</em></h1></div>
-        <p class="intro-copy">Your memory lens recognizes familiar faces and brings the right conversation back into focus.</p>
+        <div><div class="eyebrow">Hello there</div><h1>A friendly face,<br /><em>remembered.</em></h1></div>
+        <p class="intro-copy">When someone you know is with you, their name and the things you’ve talked about will appear here.</p>
       </section>
 
       <section class="consent glass">
-        <span class="consent-icon">⌁</span>
-        <div class="consent-copy"><strong>Your camera, your call.</strong><span>Live audio and video go to this backend. With consent, one representative camera frame is saved locally for each new person.</span></div>
-        <label class="consent-toggle"><input id="consent" type="checkbox" /><span class="toggle-ui"></span><span>I have permission to capture and save a frame for the focused person.</span></label>
+        <span class="consent-icon">✿</span>
+        <div class="consent-copy"><strong>Your camera, your choice.</strong><span>Sound and video stay on this computer. With permission, one photo of each new person is saved so you can see who they are.</span></div>
+        <label class="consent-toggle"><input id="consent" type="checkbox" /><span class="toggle-ui"></span><span>Everyone here is happy to be seen and to have a photo saved.</span></label>
       </section>
 
       <section class="workspace">
         <section class="camera-panel glass">
-          <div class="panel-head"><div><span class="kicker">01 / LIVE VIEW</span><h2>Memory lens</h2></div><span id="connection" class="connection"><i></i> STANDBY</span></div>
+          <div class="panel-head"><div><span class="kicker">Camera</span><h2>Who’s here</h2></div><span id="connection" class="connection"><i></i> Not started</span></div>
           <div class="camera-frame">
             <video id="video" autoplay playsinline muted></video>
-            <div id="placeholder" class="camera-placeholder"><div class="aperture"><span></span><span></span><span></span></div><strong>Your view, with a little more memory.</strong><small>Start the camera when everyone is ready.</small></div>
+            <div id="placeholder" class="camera-placeholder"><div class="aperture"><span></span><span></span><span></span></div><strong>Ready when you are</strong><small>Press “Start” when everyone is comfortable.</small></div>
+            <div id="specs" class="specs" hidden aria-hidden="true">
+              <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                  <mask id="specs-lenses">
+                    <rect width="1600" height="900" fill="white" />
+                    <rect x="80" y="150" width="690" height="590" rx="230" fill="black" />
+                    <rect x="830" y="150" width="690" height="590" rx="230" fill="black" />
+                  </mask>
+                  <linearGradient id="specs-glare" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#fff" stop-opacity="0" />
+                    <stop offset=".45" stop-color="#fff" stop-opacity="0" />
+                    <stop offset=".5" stop-color="#fff" stop-opacity=".16" />
+                    <stop offset=".58" stop-color="#fff" stop-opacity="0" />
+                  </linearGradient>
+                  <linearGradient id="specs-tortoise" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#6b4226" /><stop offset=".35" stop-color="#3f2617" />
+                    <stop offset=".6" stop-color="#7a4b2a" /><stop offset="1" stop-color="#3a2315" />
+                  </linearGradient>
+                </defs>
+                <rect width="1600" height="900" fill="#2a1c12" fill-opacity=".62" mask="url(#specs-lenses)" />
+                <rect x="80" y="150" width="690" height="590" rx="230" fill="url(#specs-glare)" />
+                <rect x="830" y="150" width="690" height="590" rx="230" fill="url(#specs-glare)" />
+                <g fill="none" stroke="url(#specs-tortoise)" stroke-linecap="round">
+                  <rect x="80" y="150" width="690" height="590" rx="230" stroke-width="30" />
+                  <rect x="830" y="150" width="690" height="590" rx="230" stroke-width="30" />
+                  <path d="M768 320 Q800 290 832 320" stroke-width="26" />
+                  <path d="M82 300 L0 285" stroke-width="24" />
+                  <path d="M1518 300 L1600 285" stroke-width="24" />
+                </g>
+              </svg>
+              <div id="specs-hud" class="specs-hud"><span class="specs-dot"></span><div><div id="specs-name" class="specs-name">Looking…</div><div id="specs-line" class="specs-line"></div></div></div>
+            </div>
             <div class="camera-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
             <div id="recognition-toast" class="recognition-toast" aria-live="polite"></div>
-            <div class="camera-caption"><span class="live-pip"></span><span>LIVE FRAME</span><span class="caption-divider">/</span><span>ANALYSIS EVERY 5 SEC</span></div>
+            <div class="camera-caption"><span class="live-pip"></span><span>Looking for familiar faces</span></div>
           </div>
-          <div class="controls"><button id="start" class="primary" disabled><span>◉</span> Start camera & mic</button><button id="stop" class="secondary" disabled>Stop capture</button><button id="voice" class="tertiary" disabled>Enroll my voice · 10 sec</button></div>
-          <div class="capture-foot"><span id="event-log" aria-live="polite">Ready when you are.</span><span>Images are kept on this device’s backend.</span></div>
+          <div class="controls"><button id="start" class="primary" disabled><span>▶</span> Start</button><button id="stop" class="secondary" disabled>Stop</button><button id="voice" class="tertiary" disabled>Learn my voice</button><button id="specs-toggle" class="secondary specs-toggle" aria-pressed="false">Glasses view</button></div>
+          <div class="capture-foot"><span id="event-log" aria-live="polite">Ready when you are.</span><span>Photos are kept on this computer.</span></div>
         </section>
 
         <aside class="right-rail">
-          <section class="identity-panel glass">
-            <div class="panel-head"><div><span class="kicker">02 / IN FOCUS</span><h2>Person card</h2></div><span id="match-status" class="match-status">WAITING</span></div>
-            <div class="identity-card">
-              <div class="portrait-lens">
-                <img id="portrait" alt="Saved portrait of the person in focus" hidden />
-                <div id="portrait-placeholder" class="portrait-placeholder"><div class="lens-ring"><span></span></div><span>Waiting for a face</span></div>
-                <div class="lens-glint" aria-hidden="true"></div>
-                <span id="portrait-state" class="portrait-state">NO SAVED FRAME</span>
-              </div>
-              <div class="identity-meta"><div id="face-name" class="face-name">No one in focus</div><div class="identity-id"><span class="id-dot"></span><span id="face-id">ID —</span><span id="confidence">—</span></div></div>
+          <section class="people-panel glass">
+            <div class="panel-head"><div><span class="kicker">People</span><h2>Who you’re with</h2></div><div class="people-head-right"><button id="people-mode" class="people-mode" type="button" aria-pressed="true" title="Show everyone you meet, or only the last three">⇄ Showing everyone</button><span id="people-count" class="match-status">No one yet</span></div></div>
+            <div id="people" class="people">
+              <div id="people-empty" class="people-empty"><div class="lens-ring"></div><p>When someone familiar is with you, what you know about them will show here.</p></div>
             </div>
-            <div class="memory-card"><div class="memory-label"><span>MEMORY SNAPSHOT</span><span id="memory-state">READY</span></div><div id="persona" class="persona"><p>When a familiar person appears, their saved details will show here.</p></div></div>
-            <button id="forget-portrait" class="forget-button" disabled>Forget saved portrait</button>
+            <div id="waiting" class="waiting" hidden></div>
           </section>
 
-          <section class="transcript-panel glass">
-            <div class="panel-head"><div><span class="kicker">03 / CONVERSATION</span><h2>Live transcript</h2></div><span id="talking" class="talking"><i></i> IDLE</span></div>
-            <div id="transcript" class="transcript" aria-live="polite" aria-relevant="additions"><div class="transcript-empty"><span class="sound-wave">∿</span><p>Your conversation will appear here as it’s heard.</p></div></div>
-            <div class="transcript-foot"><span id="stt-provider">TRANSCRIBED LOCALLY</span><span id="transcript-count">0 LINES</span></div>
-          </section>
+          <details class="transcript-panel glass">
+            <summary class="panel-head"><div><span class="kicker">Conversation · tap to show</span><h2>What’s being said</h2></div><span id="talking" class="talking"><i></i> Quiet</span></summary>
+            <div id="transcript" class="transcript" aria-live="polite" aria-relevant="additions"><div class="transcript-empty"><span class="sound-wave">∿</span><p>Words will appear here as people talk.</p></div></div>
+            <div class="transcript-foot"><span id="stt-provider">Written down on this computer</span><span id="transcript-count"></span></div>
+          </details>
         </aside>
       </section>
-      <footer><span>RECALL.AI <span class="footer-muted">· memory, in the moment</span></span><span>Stop capture any time to end the stream.</span></footer>
+      <footer><span>Recall <span class="footer-muted">· the people you love, close at hand</span></span><span>Press Stop at any time.</span></footer>
     </main>
+    <dialog id="person-dialog" class="person-dialog" aria-labelledby="dialog-name">
+      <div class="dialog-panel">
+        <button id="dialog-close" class="dialog-close" aria-label="Close">×</button>
+        <div class="dialog-top">
+          <div class="avatar dialog-avatar"><div class="avatar-placeholder"></div><img id="dialog-photo" alt="" hidden /></div>
+          <div>
+            <div id="dialog-name" class="dialog-name"></div>
+            <div id="dialog-relation" class="card-relation"></div>
+            <div id="dialog-presence" class="presence"><i></i><span id="dialog-presence-text"></span></div>
+          </div>
+        </div>
+        <div id="dialog-body" class="dialog-body"></div>
+        <div class="dialog-foot"><span id="dialog-stats"></span><button id="dialog-forget" class="forget-button" hidden>Forget this photo</button></div>
+      </div>
+    </dialog>
     <script src="/web-assets/app.js" defer></script>
   </body>
 </html>

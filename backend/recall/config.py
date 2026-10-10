@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     local_face_new_face_threshold: float = 0.35
     local_face_min_det_score: float = 0.6
     frames_per_window: int = 1
+    # Which face is "in focus" (enrolled, photographed, and credited with other people's speech):
+    # "center" = nearest the middle of the frame (on glasses, who you're looking at), "largest" = biggest.
+    focus_rule: Literal["center", "largest"] = "center"
     face_confirm_windows: int = 2
     face_absent_confirm_windows: int = 3
 
@@ -54,8 +57,22 @@ class Settings(BaseSettings):
     min_speech_duration_s: float = 1.2
     min_silence_duration_s: float = 6.0
 
+    # Attributing someone else's speech to the face in focus. Quieter speech is treated as background
+    # (unset to disable); the log prints each utterance's level so this can be tuned per mic and room.
+    # Off by default: the browser's auto gain (needed so quiet mics give usable speech) makes loudness a
+    # poor near/far signal. Set it (e.g. -50) only for clients that send un-normalised audio.
+    min_other_speech_dbfs: float | None = None
+    # Lip check (InsightFace only): the client sends ~5 fps lip frames while it hears sound. Speech during
+    # which the focused face's mouth openness (inner-lip gap / mouth width) barely varied is background.
+    lip_check: bool = True
+    # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
+    # True: speech goes to whichever face's mouth moved most.
+    lip_picks_speaker: bool = False
+    lip_min_openness_std: float = 0.02
+
     # Persona (Anthropic credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile)
-    anthropic_model: str = "claude-opus-5-5"
+    # Sonnet is plenty for a short profile and faster than Opus. The persona job runs every
+    # `persona_cycle_s` after the previous run finished, plus once whenever a conversation ends.
+    anthropic_model: str = "claude-sonnet-5-5"
     persona_effort: Literal["low", "medium", "high", "xhigh", "max"] = "low"
-    persona_update_interval_s: float = 300.0
-    persona_min_new_segments: int = 3
+    persona_cycle_s: float = 90.0

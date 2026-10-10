@@ -44,3 +44,36 @@ class FocusedFaceTracker:
 
     def face_at(self, ts: float) -> str | None:
         return self.change_at(ts)[1]
+
+
+class PresenceTracker:
+    """Which known faces are confirmed in view, for the UI's green/red dots.
+
+    Like FocusedFaceTracker but for every face in the frame: a face counts as present after
+    `confirm_windows` consecutive windows and as gone after `absent_windows` consecutive windows
+    without it, so one blurry or covered frame never changes what's shown.
+    """
+
+    def __init__(self, confirm_windows: int, absent_windows: int):
+        self._confirm_windows = confirm_windows
+        self._absent_windows = absent_windows
+        self.present: set[str] = set()
+        self._seen_streak: dict[str, int] = {}
+        self._missing_streak: dict[str, int] = {}
+
+    def observe(self, seen: set[str]) -> bool:
+        """Record one window's faces. Returns True if the confirmed set changed."""
+        before = set(self.present)
+        for face_id in seen:
+            self._missing_streak.pop(face_id, None)
+            self._seen_streak[face_id] = self._seen_streak.get(face_id, 0) + 1
+            if self._seen_streak[face_id] >= self._confirm_windows:
+                self.present.add(face_id)
+        for face_id in set(self._seen_streak) - seen:
+            self._seen_streak.pop(face_id)
+        for face_id in self.present - seen:
+            self._missing_streak[face_id] = self._missing_streak.get(face_id, 0) + 1
+            if self._missing_streak[face_id] >= self._absent_windows:
+                self.present.discard(face_id)
+                self._missing_streak.pop(face_id)
+        return self.present != before

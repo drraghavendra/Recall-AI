@@ -39,3 +39,21 @@ def test_timeline_is_stamped_when_the_new_face_was_first_seen():
     assert tracker.face_at(5.0) == "alice"
     assert tracker.face_at(10.0) == "bob"
     assert tracker.change_at(11.0) == (10.0, "bob")
+
+
+def test_presence_needs_consecutive_windows_and_survives_one_missed_frame():
+    from recall.face.tracker import PresenceTracker
+
+    presence = PresenceTracker(confirm_windows=2, absent_windows=3)
+    presence.observe({"alice"})
+    assert presence.present == set()
+    presence.observe({"alice", "bob"})
+    assert presence.present == {"alice"}
+    presence.observe({"bob"})  # alice missed one frame, bob confirmed
+    assert presence.present == {"alice", "bob"}
+    presence.observe({"alice", "bob"})
+    presence.observe({"bob"})
+    presence.observe({"bob"})
+    assert presence.present == {"alice", "bob"}
+    presence.observe({"bob"})
+    assert presence.present == {"bob"}

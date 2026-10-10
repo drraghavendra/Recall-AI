@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS faces (
 CREATE TABLE IF NOT EXISTS face_portraits (
     face_id TEXT PRIMARY KEY REFERENCES faces(face_id) ON DELETE CASCADE,
     image BLOB NOT NULL,
-    saved_at REAL NOT NULL
+    saved_at REAL NOT NULL,
+    score REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS face_samples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,8 +26,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     conv_id INTEGER PRIMARY KEY AUTOINCREMENT,
     face_id TEXT,
     started_at REAL NOT NULL,
-    ended_at REAL,
-    persona_watermark INTEGER NOT NULL DEFAULT 0
+    ended_at REAL
 );
 CREATE TABLE IF NOT EXISTS transcript_segments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,14 +38,14 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
     face_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_segments_conv ON transcript_segments(conv_id, id);
-CREATE TABLE IF NOT EXISTS personas (
+CREATE INDEX IF NOT EXISTS idx_face_samples_ts ON face_samples(ts);
+-- One row per person the persona job has looked at. `persona` is the structured Persona as JSON (NULL
+-- until something worth remembering was said); `last_segment_id` is the last transcript line already
+-- sent to Claude, so each line is considered exactly once.
+CREATE TABLE IF NOT EXISTS profiles (
     face_id TEXT PRIMARY KEY,
-    names TEXT NOT NULL,
-    nickname TEXT NOT NULL,
-    relation TEXT NOT NULL,
-    key_facts TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    conversation_count INTEGER NOT NULL DEFAULT 0,
+    persona TEXT,
+    last_segment_id INTEGER NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS self_voice (
@@ -72,6 +72,34 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
+        self._migrate_flat_personas()
+        if "score" not in {row["name"] for row in self._conn.execute("PRAGMA table_info(face_portraits)")}:
+            self._execute("ALTER TABLE face_portraits ADD COLUMN score REAL NOT NULL DEFAULT 0")
+
+    def _migrate_flat_personas(self) -> None:
+        """Earlier builds kept flat personas in a `personas` table; carry them into `profiles` once."""
+        if not self._conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'personas'").fetchone():
+            return
+        conv_columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(conversations)")}
+        with self._conn:
+            for row in self._conn.execute("SELECT * FROM personas").fetchall():
+                persona = {
+                    "names": json.loads(row["names"]), "nickname": row["nickname"], "relation": row["relation"],
+                    "work": [], "family": [], "interests": [], "plans": [], "other": json.loads(row["key_facts"]),
+                    "last_talked_about": "", "summary": row["summary"],
+                }
+                # Lines the old per-conversation updates already used shouldn't be sent to Claude again.
+                sent = 0
+                if "persona_watermark" in conv_columns:
+                    sent = self._conn.execute(
+                        "SELECT COALESCE(MAX(persona_watermark), 0) FROM conversations WHERE face_id = ?",
+                        (row["face_id"],),
+                    ).fetchone()[0]
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO profiles (face_id, persona, last_segment_id, updated_at) VALUES (?, ?, ?, ?)",
+                    (row["face_id"], json.dumps(persona), sent, row["updated_at"]),
+                )
+            self._conn.execute("DROP TABLE personas")
 
     def close(self) -> None:
         self._conn.close()
@@ -92,11 +120,19 @@ class Database:
         numbers = [int(match.group(1)) for row in rows if (match := re.fullmatch(r"person_(\d+)", row["face_id"]))]
         return f"person_{max(numbers, default=0) + 1:03d}"
 
-    def save_face_portrait(self, face_id: str, image: bytes) -> None:
+    def save_face_portrait(self, face_id: str, image: bytes, score: float = 0.0) -> None:
+        """Save the person's photo, replacing the current one."""
         self._execute(
-            "INSERT OR IGNORE INTO face_portraits(face_id, image, saved_at) VALUES (?, ?, ?)",
-            (face_id, image, time.time()),
+            "INSERT INTO face_portraits(face_id, image, saved_at, score) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(face_id) DO UPDATE SET image = excluded.image, saved_at = excluded.saved_at, "
+            "score = excluded.score",
+            (face_id, image, time.time(), score),
         )
+
+    def portrait_info(self, face_id: str) -> tuple[float, float] | None:
+        """(score, saved_at) of the person's photo, or None if there isn't one."""
+        row = self._conn.execute("SELECT score, saved_at FROM face_portraits WHERE face_id = ?", (face_id,)).fetchone()
+        return None if row is None else (row["score"], row["saved_at"])
 
     def get_face_portrait(self, face_id: str) -> bytes | None:
         row = self._conn.execute("SELECT image FROM face_portraits WHERE face_id = ?", (face_id,)).fetchone()
@@ -131,61 +167,50 @@ class Database:
         )
         return cur.lastrowid
 
-    def get_watermark(self, conv_id: int) -> int:
+    def majority_face(self, start: float, end: float, pad_s: float = 0.5) -> str | None:
+        """The face most often in focus between `start` and `end`, from the 1-per-second face samples."""
         row = self._conn.execute(
-            "SELECT persona_watermark FROM conversations WHERE conv_id = ?", (conv_id,)
+            "SELECT focused_face_id, COUNT(*) AS n FROM face_samples "
+            "WHERE ts BETWEEN ? AND ? AND focused_face_id IS NOT NULL "
+            "GROUP BY focused_face_id ORDER BY n DESC, MAX(ts) DESC LIMIT 1",
+            (start - pad_s, end + pad_s),
         ).fetchone()
-        return row["persona_watermark"]
+        return None if row is None else row["focused_face_id"]
 
-    def set_watermark(self, conv_id: int, segment_id: int) -> None:
-        self._execute(
-            "UPDATE conversations SET persona_watermark = ? WHERE conv_id = ?", (segment_id, conv_id)
-        )
-
-    def other_segments_after(self, conv_id: int, after_id: int) -> list[Segment]:
+    def pending_lines(self) -> dict[str, list[Segment]]:
+        """Other people's transcript lines not yet sent to Claude, grouped by face (the face <> transcript map)."""
         rows = self._conn.execute(
-            "SELECT id, ts_start, ts_end, text FROM transcript_segments "
-            "WHERE conv_id = ? AND id > ? AND speaker = 'other' ORDER BY id",
-            (conv_id, after_id),
+            "SELECT s.id, s.face_id, s.ts_start, s.ts_end, s.text FROM transcript_segments s "
+            "LEFT JOIN profiles p ON p.face_id = s.face_id "
+            "WHERE s.speaker = 'other' AND s.face_id IS NOT NULL AND s.id > COALESCE(p.last_segment_id, 0) "
+            "ORDER BY s.id"
         ).fetchall()
-        return [Segment(r["id"], r["ts_start"], r["ts_end"], r["text"]) for r in rows]
+        lines: dict[str, list[Segment]] = {}
+        for r in rows:
+            lines.setdefault(r["face_id"], []).append(Segment(r["id"], r["ts_start"], r["ts_end"], r["text"]))
+        return lines
 
     def get_persona(self, face_id: str) -> dict | None:
-        row = self._conn.execute("SELECT * FROM personas WHERE face_id = ?", (face_id,)).fetchone()
+        row = self._conn.execute(
+            "SELECT persona, updated_at FROM profiles WHERE face_id = ? AND persona IS NOT NULL", (face_id,)
+        ).fetchone()
         if row is None:
             return None
-        persona = dict(row)
-        persona["names"] = json.loads(persona["names"])
-        persona["key_facts"] = json.loads(persona["key_facts"])
-        return persona
+        stats = self._conn.execute(
+            "SELECT (SELECT COUNT(*) FROM conversations WHERE face_id = ?) AS times_met, "
+            "(SELECT MAX(ts) FROM face_samples WHERE focused_face_id = ?) AS last_seen",
+            (face_id, face_id),
+        ).fetchone()
+        return {**json.loads(row["persona"]), "updated_at": row["updated_at"], **dict(stats)}
 
-    def upsert_persona(self, face_id: str, fields: dict, count_conversation: bool) -> None:
-        increment = 1 if count_conversation else 0
+    def save_persona(self, face_id: str, persona: dict | None, last_segment_id: int) -> None:
+        """Advance the face's bookmark; also replace its persona unless `persona` is None (nothing new)."""
         self._execute(
-            "INSERT INTO personas "
-            "(face_id, names, nickname, relation, key_facts, summary, conversation_count, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(face_id) DO UPDATE SET "
-            "names = excluded.names, nickname = excluded.nickname, relation = excluded.relation, "
-            "key_facts = excluded.key_facts, summary = excluded.summary, "
-            "conversation_count = personas.conversation_count + ?, updated_at = excluded.updated_at",
-            (
-                face_id,
-                json.dumps(fields["names"]),
-                fields["nickname"],
-                fields["relation"],
-                json.dumps(fields["key_facts"]),
-                fields["summary"],
-                increment,
-                time.time(),
-                increment,
-            ),
-        )
-
-    def increment_conversation_count(self, face_id: str) -> None:
-        self._execute(
-            "UPDATE personas SET conversation_count = conversation_count + 1 WHERE face_id = ?",
-            (face_id,),
+            "INSERT INTO profiles (face_id, persona, last_segment_id, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(face_id) DO UPDATE SET last_segment_id = excluded.last_segment_id, "
+            "persona = COALESCE(excluded.persona, profiles.persona), "
+            "updated_at = CASE WHEN excluded.persona IS NULL THEN profiles.updated_at ELSE excluded.updated_at END",
+            (face_id, None if persona is None else json.dumps(persona), last_segment_id, time.time()),
         )
 
     def get_self_voice(self) -> bytes | None:
