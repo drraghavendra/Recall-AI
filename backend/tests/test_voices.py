@@ -124,3 +124,12 @@ def test_the_users_own_words_go_to_their_card_when_marked():
     matcher = ConversationMatcher(db, tracker, 1.0, 5.0, lambda _e: None, lambda _c: None)
     matcher.on_utterance(Utterance(0.5, 2.5, "I'm a teacher", "self"))
     assert [segment.text for segment in db.pending_lines()["me"]] == ["I'm a teacher"]
+
+
+def test_marking_the_users_face_credits_their_earlier_lines():
+    db = Database(":memory:")
+    conv = db.open_conversation("me", 0.0)
+    db.insert_segment(conv, 0, 1, "I'm a teacher", "self", None)
+    db.insert_segment(conv, 1, 2, "nice", "other", "bob")
+    assert db.credit_self_lines("me") == 1
+    assert [s.text for s in db.pending_lines()["me"]] == ["I'm a teacher"]

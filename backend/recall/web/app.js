@@ -49,6 +49,7 @@
 
   // The face marked as the user themselves (laptop demo), if any.
   let wearerId = null;
+  let meHintDismissed = false;
 
   const personName = (faceId) => {
     if (faceId && faceId === wearerId) return "You";
@@ -306,6 +307,7 @@
 
   function showWearer(faceId) {
     wearerId = faceId || null;
+    if (wearerId) $("me-hint").hidden = true;
     for (const id of cards.keys()) renderCardBody(id);
     if (dialogFace && $("person-dialog").open) renderDetails();
     updateSpecsHud();
@@ -563,6 +565,10 @@
       if (focusedId !== previousFocus) appendLog(focusedId ? `${personName(focusedId)} is here` : "Looking for a familiar face");
     } else if (event.type === "providers_changed") {
       showProviders(event);
+    } else if (event.type === "transcript" && event.speaker === "self" && !wearerId && cards.size) {
+      // The user's own words only count once we know which face is theirs (laptop demo).
+      if (!meHintDismissed) $("me-hint").hidden = false;
+      addTranscript(event);
     } else if (event.type === "transcript") {
       addTranscript(event);
     } else if (event.type === "wearer_changed") {
@@ -810,6 +816,7 @@
   setInterval(updateCards, 15000);
   $("dialog-close").addEventListener("click", () => $("person-dialog").close());
   $("dialog-forget").addEventListener("click", () => { if (dialogFace) void forgetPortrait(dialogFace); });
+  $("me-hint").addEventListener("click", () => { meHintDismissed = true; $("me-hint").hidden = true; });
   $("dialog-me").addEventListener("click", () => { if (dialogFace) void setWearer(dialogFace === wearerId ? null : dialogFace); });
   $("voice-me").addEventListener("click", () => {
     if (focusedId) void setWearer(focusedId);

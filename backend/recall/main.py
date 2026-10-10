@@ -110,6 +110,8 @@ async def get_wearer(request: Request) -> dict:
 async def set_wearer(choice: WearerChoice, request: Request) -> dict:
     services = _services(request)
     services.db.set_wearer_face(choice.face_id)
+    if choice.face_id is not None and services.db.credit_self_lines(choice.face_id):
+        services.persona.request_run()  # what the user already said now counts for their card
     services.hub.publish({"type": "wearer_changed", "face_id": choice.face_id})
     return {"face_id": choice.face_id}
 

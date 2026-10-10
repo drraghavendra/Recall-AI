@@ -257,6 +257,13 @@ class Database:
             (face_id,),
         )
 
+    def credit_self_lines(self, face_id: str) -> int:
+        """Give the user's own lines that weren't linked to any face to `face_id` (their face, just marked)."""
+        cursor = self._execute(
+            "UPDATE transcript_segments SET face_id = ? WHERE speaker = 'self' AND face_id IS NULL", (face_id,)
+        )
+        return cursor.rowcount
+
     def get_self_voice(self) -> bytes | None:
         row = self._conn.execute("SELECT embedding FROM self_voice WHERE id = 1").fetchone()
         return None if row is None else row["embedding"]
