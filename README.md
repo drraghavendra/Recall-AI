@@ -20,4 +20,6 @@ Surfaces that persona the next time the same face appears, before you have to as
 
 
 - **[SETUP.md](SETUP.md)** — install and run on macOS / Windows
+- Browser client: start the backend and open `http://localhost:8000`. Select AWS Rekognition
+  (default), local InsightFace, or Mock with `RECALL_FACE_BACKEND`.
 - [DESIGN.md](DESIGN.md) — architecture · [TASKS.md](TASKS.md) — build plan · [RESEARCH.md](RESEARCH.md) — prior art

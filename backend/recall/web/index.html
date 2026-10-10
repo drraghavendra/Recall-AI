@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101821" />
+    <title>Recall-AI · Web capture</title>
+    <link rel="stylesheet" href="/web-assets/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">RECALL-AI · PRIVATE MEMORY</div>
+          <h1>People, in context.</h1>
+          <p class="subhead">A live view of the person in front of you and what you remember together.</p>
+        </div>
+        <div class="provider"><span class="dot"></span><span id="provider">Checking face module…</span></div>
+      </header>
+
+      <section class="consent card">
+        <div class="consent-mark">i</div>
+        <div>
+          <strong>Choose before you capture</strong>
+          <p>Starting capture streams camera frames and microphone audio to this Recall-AI backend. Face matching uses the configured module. Stop capture at any time.</p>
+          <label class="check"><input id="consent" type="checkbox" /> I have permission to capture and process the people and conversation in view.</label>
+        </div>
+      </section>
+
+      <section class="layout">
+        <section class="camera-card card">
+          <div class="section-head"><div><span class="step">01</span><h2>Live capture</h2></div><span id="connection" class="connection">Not connected</span></div>
+          <div class="video-wrap"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas><div id="placeholder" class="placeholder"><span class="camera-icon">◉</span><span>Camera preview appears here</span></div></div>
+          <div class="controls">
+            <button id="start" class="primary" disabled>Start camera & mic</button>
+            <button id="stop" class="secondary" disabled>Stop capture</button>
+            <button id="voice" class="tertiary" disabled>Enroll my voice · 10 sec</button>
+          </div>
+          <p class="hint">The browser samples a frame every 5 seconds and streams 16 kHz mono audio. Images are not saved by the web client.</p>
+        </section>
+
+        <aside class="persona-card card">
+          <div class="section-head"><div><span class="step">02</span><h2>Recall</h2></div><span id="talking" class="talking">IDLE</span></div>
+          <div id="face-name" class="face-name">No face in view</div>
+          <div id="persona" class="persona"><p>Start capture to look up a familiar face and its saved persona.</p></div>
+          <div id="event-log" class="event-log" aria-live="polite">Waiting for the client to connect.</div>
+        </aside>
+      </section>
+
+      <footer><span>Recall-AI web client</span><span>Camera and microphone access stay under your control.</span></footer>
+    </main>
+    <script src="/web-assets/app.js" defer></script>
+  </body>
+</html>
