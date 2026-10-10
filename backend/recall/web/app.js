@@ -459,6 +459,7 @@
     const field = PROVIDER_SELECTS[select.id];
     const label = select.selectedOptions[0].textContent;
     for (const id of Object.keys(PROVIDER_SELECTS)) $(id).disabled = true;
+    showToast(`Switching to ${label}…`);
     appendLog(`Switching to ${label}… the first switch loads its model and can take a while.`);
     try {
       const response = await fetch("/providers", {
@@ -469,11 +470,14 @@
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : `HTTP ${response.status}`);
       showProviders(body);
+      showToast(`Now using ${label}`);
       appendLog(field === "face_backend"
         ? `Face module: ${label}. Faces saved by other modules are not recognized by this one.`
         : `Speech module: ${label}.`);
     } catch (error) {
       select.value = select.dataset.current;
+      // Make the failure obvious: the status line is soon overwritten by face updates.
+      showToast(`Couldn't switch to ${label}: ${error.message}`);
       appendLog(error.message);
     } finally {
       for (const id of Object.keys(PROVIDER_SELECTS)) $(id).disabled = !$(id).dataset.current;
