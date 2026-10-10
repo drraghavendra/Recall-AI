@@ -59,3 +59,27 @@ def test_insightface_recognizer_reports_no_face(tmp_path, monkeypatch):
 
     assert result.face_found is False
     assert result.face_id is None
+
+
+def test_ambiguous_score_is_not_treated_as_a_new_person(tmp_path, monkeypatch):
+    fake_cv2(monkeypatch)
+    recognizer = InsightFaceRecognizer(
+        str(tmp_path / "faces.sqlite3"), match_threshold=0.8, new_face_threshold=0.3, face_app=FakeFaceApp([1.0, 0.0])
+    )
+    recognizer.enroll(b"jpeg", "person_001")
+    recognizer._face_app = FakeFaceApp([0.6, 0.8])  # cosine 0.6: between the thresholds
+
+    result = recognizer.search(b"jpeg")
+
+    assert (result.face_found, result.face_id) == (False, None)
+
+
+def test_low_detection_score_face_is_ignored(tmp_path, monkeypatch):
+    fake_cv2(monkeypatch)
+    app = FakeFaceApp([1.0, 0.0])
+    original = app.get
+    app.get = lambda image: [SimpleNamespace(**{**vars(f), "det_score": 0.3}) for f in original(image)]
+    recognizer = InsightFaceRecognizer(str(tmp_path / "faces.sqlite3"), face_app=app)
+
+    assert recognizer.enroll(b"jpeg", "person_001") is None
+    assert recognizer.search(b"jpeg").face_found is False

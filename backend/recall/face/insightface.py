@@ -14,11 +14,20 @@ from recall.face.recognizer import SearchResult
 class InsightFaceRecognizer:
     """Detect the largest face and match normalized embeddings in a local SQLite collection."""
 
-    def __init__(self, db_path: str, match_threshold: float = 0.55, face_app=None):
+    def __init__(
+        self,
+        db_path: str,
+        match_threshold: float = 0.55,
+        new_face_threshold: float = 0.35,
+        min_det_score: float = 0.6,
+        face_app=None,
+    ):
         if not 0.0 <= match_threshold <= 1.0:
             raise ValueError("InsightFace match threshold must be between 0 and 1")
         self._db_path = db_path
         self._match_threshold = match_threshold
+        self._new_face_threshold = min(new_face_threshold, match_threshold)
+        self._min_det_score = min_det_score
         self._lock = RLock()
         if face_app is None:
             try:
@@ -61,6 +70,9 @@ class InsightFaceRecognizer:
             key=lambda item: max(0.0, float(item.bbox[2] - item.bbox[0]))
             * max(0.0, float(item.bbox[3] - item.bbox[1])),
         )
+        # A hand over the face or a blurry detection gives a junk embedding; better to see "no face" than guess.
+        if float(getattr(face, "det_score", 1.0)) < self._min_det_score:
+            return None
         embedding = np.asarray(face.normed_embedding, dtype=np.float32).reshape(-1)
         norm = float(np.linalg.norm(embedding))
         if not np.isfinite(norm) or norm == 0:
@@ -87,6 +99,10 @@ class InsightFaceRecognizer:
                     best_id, best_score = face_id, score
         if best_id is not None and best_score >= self._match_threshold:
             return SearchResult(face_found=True, face_id=best_id, similarity=best_score)
+        if best_id is not None and best_score >= self._new_face_threshold:
+            # Between "same person" and "stranger": likely the known person partly occluded or turned away.
+            # Report no usable face so the caller neither switches identity nor enrolls a duplicate.
+            return SearchResult(face_found=False, face_id=None, similarity=best_score)
         return SearchResult(face_found=True, face_id=None, similarity=max(0.0, best_score))
 
     def enroll(self, image: bytes, face_id: str) -> str | None:
