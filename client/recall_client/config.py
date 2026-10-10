@@ -14,7 +14,7 @@ def ws_url_for(server_url: str) -> str:
 class ClientConfig:
     server_url: str = "http://localhost:8000"
     camera_index: int = 0
-    window_s: float = 5.0
+    window_s: float = 1.0
     frames_per_window: int = 1
     jpeg_width: int = 640
     jpeg_quality: int = 80

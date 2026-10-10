@@ -1,6 +1,6 @@
 (() => {
   const TARGET_RATE = 16000;
-  const FRAME_PERIOD_MS = 5000;
+  const FRAME_PERIOD_MS = 1000;
   const AUDIO_CHUNK_SAMPLES = 1600;
   const $ = (id) => document.getElementById(id);
 
