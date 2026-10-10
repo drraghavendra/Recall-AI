@@ -4,7 +4,7 @@ import pytest
 from recall.audio.level import speech_level_dbfs
 from recall.audio.types import Utterance
 from recall.db import Database
-from recall.face.lips import PATCH_SIZE, LipActivityTracker
+from recall.face.lips import LipActivityTracker, mouth_openness
 from recall.face.tracker import FocusedFaceTracker
 from recall.matching.attribution import AttributionGate
 from recall.matching.matcher import ConversationMatcher
@@ -23,42 +23,42 @@ def test_level_ignores_leading_and_trailing_silence():
     assert speech_level_dbfs(tone(0.1), RATE) - speech_level_dbfs(tone(0.01), RATE) == pytest.approx(20, abs=0.5)
 
 
-def patch(value: float) -> np.ndarray:
-    return np.full(PATCH_SIZE[::-1], value, np.float32) + np.linspace(0, value, PATCH_SIZE[0], dtype=np.float32)
-
-
-def feed(tracker, start, frames, mouth_moves, nose_moves=False):
-    for i in range(frames):
-        mouth = patch(20.0 * (i % 2)) if mouth_moves else patch(0.0)
-        nose = patch(20.0 * (i % 2)) if nose_moves else patch(0.0)
-        tracker.observe(start + i * 0.2, (mouth, nose))
+def face_with_mouth_open(gap: float) -> np.ndarray:
+    landmarks = np.zeros((68, 3), np.float32)
+    landmarks[48, :2], landmarks[54, :2] = (0, 0), (40, 0)  # 40px wide mouth
+    for top, bottom in ((61, 67), (62, 66), (63, 65)):
+        landmarks[top, :2], landmarks[bottom, :2] = (20, -gap / 2), (20, gap / 2)
+    return landmarks
 
 
 def lips() -> LipActivityTracker:
-    return LipActivityTracker(min_motion=3.0, motion_ratio=1.5, min_talking_fraction=0.3)
+    return LipActivityTracker(min_openness_std=0.03)
 
 
-def test_lip_check_sees_a_moving_mouth_as_talking():
+def feed(tracker, start, gaps):
+    for i, gap in enumerate(gaps):
+        tracker.observe(start + i * 0.2, mouth_openness(face_with_mouth_open(gap)))
+
+
+def test_openness_is_inner_lip_gap_over_mouth_width():
+    assert mouth_openness(face_with_mouth_open(10)) == pytest.approx(0.25)
+
+
+def test_lip_check_sees_a_mouth_opening_and_closing_as_talking():
     tracker = lips()
-    feed(tracker, 0.0, 10, mouth_moves=True)
-    assert tracker.talking_during(0.2, 1.8) is True
+    feed(tracker, 0.0, [2, 12, 4, 14, 1, 10, 3, 12])
+    assert tracker.talking_during(0.2, 1.4) is True
 
 
-def test_lip_check_sees_a_still_mouth_as_not_talking():
+def test_lip_check_sees_a_steady_mouth_as_not_talking():
     tracker = lips()
-    feed(tracker, 0.0, 10, mouth_moves=False)
-    assert tracker.talking_during(0.2, 1.8) is False
-
-
-def test_head_motion_moving_everything_is_not_talking():
-    tracker = lips()
-    feed(tracker, 0.0, 10, mouth_moves=True, nose_moves=True)
-    assert tracker.talking_during(0.2, 1.8) is False
+    feed(tracker, 0.0, [2, 2.5, 2, 1.8, 2.2, 2, 2.4, 2])
+    assert tracker.talking_during(0.2, 1.4) is False
 
 
 def test_lip_check_abstains_without_enough_frames():
     tracker = lips()
-    feed(tracker, 0.0, 10, mouth_moves=False)
+    feed(tracker, 0.0, [2, 12, 4, 14])
     assert tracker.talking_during(30.0, 32.0) is None
 
 

@@ -19,6 +19,11 @@
   let lipTimer = null;
   let lipUntil = 0;
   const others = new Map();
+  // "You're being heard": facts already on screen for the focused person, so updates can highlight what's new.
+  let shownFacts = new Set();
+  let heardCount = 0;
+  let heardTimer = null;
+  let listeningTimer = null;
   let media = null;
   let socket = null;
   let audioContext = null;
@@ -172,7 +177,9 @@
         return;
       }
       if (!response.ok) throw new Error(`Memory request returned ${response.status}`);
-      renderPersona(await response.json());
+      const persona = await response.json();
+      renderPersona(persona);
+      shownFacts = new Set(persona.key_facts || []);
       $("memory-state").textContent = "";
     } catch (error) {
       if (request === portraitRequest) {
@@ -182,7 +189,7 @@
     }
   }
 
-  function renderPersona(persona) {
+  function renderPersona(persona, fresh = []) {
     const root = $("persona");
     root.replaceChildren();
     const facts = persona.key_facts || [];
@@ -191,6 +198,7 @@
       for (const fact of facts) {
         const item = document.createElement("li");
         item.textContent = fact;
+        if (fresh.includes(fact)) item.className = "fresh";
         list.append(item);
       }
       root.append(list);
@@ -202,6 +210,27 @@
       root.append(summary);
     }
     if (!facts.length && !persona.summary) root.textContent = "No saved details yet.";
+  }
+
+  function setListening(text, kind = "") {
+    clearTimeout(listeningTimer);
+    const el = $("listening");
+    el.hidden = !text;
+    el.className = `listening ${kind}`;
+    $("listening-text").textContent = text || "";
+  }
+
+  function showHeard(facts) {
+    const list = $("heard-list");
+    list.replaceChildren();
+    for (const fact of facts) {
+      const item = document.createElement("li");
+      item.textContent = fact;
+      list.append(item);
+    }
+    $("heard").hidden = false;
+    clearTimeout(heardTimer);
+    heardTimer = setTimeout(() => { $("heard").hidden = true; }, 25000);
   }
 
   function personaLine(persona) {
@@ -299,6 +328,9 @@
     $("forget-portrait").disabled = true;
     $("persona").textContent = "No one is with you right now.";
     $("memory-state").textContent = "";
+    shownFacts = new Set();
+    setListening("");
+    $("heard").hidden = true;
   }
 
   function addTranscript(event) {
@@ -320,8 +352,10 @@
     root.scrollTop = root.scrollHeight;
     transcriptCount += 1;
     $("transcript-count").textContent = `${transcriptCount} ${transcriptCount === 1 ? "line" : "lines"}`;
-    if (background) return;
-    showToast(event.speaker === "self" ? `You: “${event.text}”` : `${personName(event.face_id)}: “${event.text}”`);
+    if (event.speaker === "other" && event.face_id && event.face_id === currentFaceId) {
+      heardCount += 1;
+      setListening(`Listening · heard ${heardCount} ${heardCount === 1 ? "thing" : "things"}`, "pulse");
+    }
   }
 
   const PROVIDER_SELECTS = { "face-backend": "face_backend", "stt-backend": "stt_backend" };
@@ -376,6 +410,8 @@
           $("match-status").classList.add("recognized");
           $("confidence").textContent = "";
           $("persona").textContent = "Remembering…";
+          shownFacts = new Set();
+          $("heard").hidden = true;
           $("memory-state").textContent = "Remembering…";
           $("portrait").hidden = true;
           $("portrait-placeholder").classList.remove("hidden");
@@ -399,16 +435,32 @@
     } else if (event.type === "persona_updated") {
       if (others.has(event.face_id)) updateOther(event.face_id, event.persona);
       if (event.face_id === currentFaceId) {
-        renderPersona(event.persona);
+        const facts = event.persona.key_facts || [];
+        const fresh = facts.filter((fact) => !shownFacts.has(fact));
+        renderPersona(event.persona, fresh);
+        shownFacts = new Set(facts);
         $("memory-state").textContent = "Just updated";
+        if (fresh.length) {
+          showHeard(fresh);
+          showToast(`Got it: ${fresh[0]}`);
+        }
+        if (!$("listening").classList.contains("pulse")) setListening("");
       }
       appendLog("Remembered something new");
     } else if (event.type === "conversation_started") {
       $("talking").innerHTML = "<i></i> Talking";
       $("talking").classList.add("active");
+      heardCount = 0;
+      if (event.face_id && event.face_id === currentFaceId) setListening("Listening…");
     } else if (event.type === "conversation_ended") {
       $("talking").innerHTML = "<i></i> Quiet";
       $("talking").classList.remove("active");
+      if (event.face_id && event.face_id === currentFaceId && heardCount) {
+        setListening("Remembering what you talked about…", "saving");
+        listeningTimer = setTimeout(() => setListening(""), 30000);
+      } else {
+        setListening("");
+      }
     }
   }
 

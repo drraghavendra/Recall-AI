@@ -130,18 +130,35 @@ class InsightFaceRecognizer:
         saved = self._saved_embeddings() if faces else []
         return [FaceHit(self._match(embedding, saved), box) for box, embedding in faces]
 
-    def detect_landmarks(self, image_bytes: bytes) -> tuple[np.ndarray, np.ndarray] | None:
-        """Detection only (no recognition) for lip frames: the image and the largest face's 5 keypoints."""
+    def mouth_landmarks(
+        self, image_bytes: bytes, near: tuple[float, float] | None = None
+    ) -> tuple[np.ndarray, tuple[float, float]] | None:
+        """For lip frames: detection plus the 68-point landmark model only (no recognition).
+
+        Picks the largest face, except that among faces nearly as large it sticks with the one closest
+        to `near` (the previous frame's face centre), so two similar-sized faces don't alternate.
+        Returns the landmarks and the chosen face's centre.
+        """
         image = self._decode(image_bytes)
         if image is None:
             return None
         bboxes, kpss = self._face_app.det_model.detect(image, max_num=0, metric="default")
-        if bboxes is None or len(bboxes) == 0 or kpss is None:
+        if bboxes is None or len(bboxes) == 0:
             return None
-        largest = max(range(len(bboxes)), key=lambda i: self._area(bboxes[i]))
+        areas = [self._area(box) for box in bboxes]
+        candidates = [i for i in range(len(bboxes)) if areas[i] >= 0.7 * max(areas)]
+        centre = lambda i: (float(bboxes[i][0] + bboxes[i][2]) / 2, float(bboxes[i][1] + bboxes[i][3]) / 2)
+        if near is None:
+            largest = max(candidates, key=lambda i: areas[i])
+        else:
+            largest = min(candidates, key=lambda i: (centre(i)[0] - near[0]) ** 2 + (centre(i)[1] - near[1]) ** 2)
         if float(bboxes[largest][4]) < self._min_det_score:
             return None
-        return image, kpss[largest]
+        from insightface.app.common import Face
+
+        face = Face(bbox=bboxes[largest][:4], kps=None if kpss is None else kpss[largest], det_score=bboxes[largest][4])
+        self._face_app.models["landmark_3d_68"].get(image, face)
+        return face.landmark_3d_68, centre(largest)
 
     def enroll(self, image: bytes, face_id: str) -> str | None:
         embedding = self._embedding(image)
