@@ -37,6 +37,7 @@ class AttributionGate:
         focused_during: Callable[[float, float], str | None] | None = None,
         voices: VoiceBook | None = None,
         in_view: Callable[[], set[str]] | None = None,
+        wearer: Callable[[], str | None] | None = None,
     ):
         self._min_level_dbfs = min_level_dbfs
         self._lips = lips
@@ -44,6 +45,7 @@ class AttributionGate:
         self._focused_during = focused_during
         self._voices = voices
         self._in_view = in_view
+        self._wearer = wearer
 
     def __call__(self, utterance: Utterance) -> Verdict:
         level = utterance.level_dbfs
@@ -51,15 +53,41 @@ class AttributionGate:
             log.info("utterance %.1f-%.1fs level %.1f dBFS", utterance.start, utterance.end, level)
         if self._min_level_dbfs is not None and level is not None and level < self._min_level_dbfs:
             return Verdict(reason="too_quiet")
+        focused = self._focused_during(utterance.start, utterance.end) if self._focused_during else None
+        wearer = self._wearer() if self._wearer else None
+        if wearer is not None and focused == wearer:
+            return self._while_wearer_in_focus(utterance, wearer)
         verdict = self._by_lips(utterance)
         if self._voices is None or verdict.reason:
             return verdict
-        focused = verdict.face_id or (self._focused_during(utterance.start, utterance.end) if self._focused_during else None)
+        focused = verdict.face_id or focused
         seconds = utterance.end - utterance.start
-        judgement = self._voices.judge(focused, utterance.voice, seconds, self._in_view() if self._in_view else None)
+        in_view = self._in_view() if self._in_view else None
+        if in_view is not None and wearer is not None:
+            in_view = in_view - {wearer}
+        judgement = self._voices.judge(focused, utterance.voice, seconds, in_view)
         if judgement.background:
             return Verdict(reason="voice_unknown")
         if judgement.face_id and utterance.voice is not None:
+            self._voices.learn(judgement.face_id, utterance.voice, seconds)
+        return Verdict(face_id=judgement.face_id)
+
+    def _while_wearer_in_focus(self, utterance: Utterance, wearer: str) -> Verdict:
+        """The user is the face in focus but this isn't their voice: it's someone else in view, or background."""
+        others = (self._in_view() if self._in_view else set()) - {wearer}
+        if not others:
+            return Verdict(reason="not_in_view")
+        seconds = utterance.end - utterance.start
+        if self._voices is None:
+            return Verdict(face_id=next(iter(others))) if len(others) == 1 else Verdict(reason="not_in_view")
+        # One other person: theirs unless their voiceprint says otherwise. Several: whoever it sounds like.
+        candidate = next(iter(others)) if len(others) == 1 else None
+        judgement = self._voices.judge(candidate, utterance.voice, seconds, others)
+        if judgement.background:
+            return Verdict(reason="voice_unknown")
+        if judgement.face_id is None:
+            return Verdict(reason="not_in_view")  # several people in view and the voice matches none of them
+        if utterance.voice is not None:
             self._voices.learn(judgement.face_id, utterance.voice, seconds)
         return Verdict(face_id=judgement.face_id)
 

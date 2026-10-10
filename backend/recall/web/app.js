@@ -47,7 +47,11 @@
   let transcriptCount = 0;
   let toastTimer = null;
 
+  // The face marked as the user themselves (laptop demo), if any.
+  let wearerId = null;
+
   const personName = (faceId) => {
+    if (faceId && faceId === wearerId) return "You";
     const persona = personas.get(faceId);
     if (persona && (persona.nickname || (persona.names || [])[0])) return persona.nickname || persona.names[0];
     const match = /^person_(\d+)$/i.exec(faceId || "");
@@ -282,6 +286,29 @@
     const met = persona && persona.times_met ? `Talked ${persona.times_met} ${persona.times_met === 1 ? "time" : "times"}` : "";
     $("dialog-stats").textContent = met;
     $("dialog-forget").hidden = !card.hasPhoto;
+    $("dialog-me").textContent = faceId === wearerId ? "This isn’t me" : "This is me";
+  }
+
+  async function setWearer(faceId) {
+    try {
+      const response = await fetch("/wearer", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ face_id: faceId }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      showWearer(faceId);
+      showToast(faceId ? "Got it, that’s you" : "Okay, that’s not you");
+    } catch {
+      showToast("Couldn’t save that, please try again");
+    }
+  }
+
+  function showWearer(faceId) {
+    wearerId = faceId || null;
+    for (const id of cards.keys()) renderCardBody(id);
+    if (dialogFace && $("person-dialog").open) renderDetails();
+    updateSpecsHud();
   }
 
   // The server keeps the best photo it has seen and bumps the URL's version when it replaces it.
@@ -462,6 +489,7 @@
     speaker.textContent = event.speaker === "self" ? "You" : background ? "Nearby" : personName(event.face_id);
     if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus"
       : event.reason === "voice_unknown" ? "Didn’t sound like the person in focus"
+      : event.reason === "not_in_view" ? "Not your voice, and no one else was in view"
       : "The person in focus wasn’t moving their lips";
     const text = document.createElement("span");
     text.className = "transcript-text";
@@ -537,6 +565,8 @@
       showProviders(event);
     } else if (event.type === "transcript") {
       addTranscript(event);
+    } else if (event.type === "wearer_changed") {
+      showWearer(event.face_id);
     } else if (event.type === "persona_updated") {
       const before = new Set(factsOf(personas.get(event.face_id)));
       personas.set(event.face_id, event.persona);
@@ -680,6 +710,7 @@
     $("voice-go").textContent = "Start reading";
     $("voice-go").disabled = false;
     $("voice-progress").hidden = true;
+    $("voice-me").hidden = true;
     setVoiceStatus("Takes about 10 seconds");
     if (!$("voice-dialog").open) $("voice-dialog").showModal();
   }
@@ -728,6 +759,8 @@
         voiceDone = true;
         setVoiceStatus("Got it, I’ll know when it’s you talking", "ok");
         $("voice-go").textContent = "Done";
+        // Laptop demo: the user faces the camera, so let them say which face is theirs.
+        $("voice-me").hidden = !focusedId || focusedId === wearerId;
         appendLog("Got it, I know your voice now");
       } catch (error) {
         setVoiceStatus("Couldn’t hear enough. Try again somewhere quieter", "error");
@@ -777,6 +810,12 @@
   setInterval(updateCards, 15000);
   $("dialog-close").addEventListener("click", () => $("person-dialog").close());
   $("dialog-forget").addEventListener("click", () => { if (dialogFace) void forgetPortrait(dialogFace); });
+  $("dialog-me").addEventListener("click", () => { if (dialogFace) void setWearer(dialogFace === wearerId ? null : dialogFace); });
+  $("voice-me").addEventListener("click", () => {
+    if (focusedId) void setWearer(focusedId);
+    $("voice-me").hidden = true;
+  });
+  fetch("/wearer").then((response) => response.json()).then((body) => showWearer(body.face_id)).catch(() => {});
   // Clicking the dimmed backdrop (outside the panel) closes the pop-up.
   $("person-dialog").addEventListener("click", (event) => { if (event.target === $("person-dialog")) $("person-dialog").close(); });
   $("person-dialog").addEventListener("close", () => { dialogFace = null; });

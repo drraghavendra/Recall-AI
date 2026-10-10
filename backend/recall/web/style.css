@@ -336,3 +336,5 @@ body.live .workspace { margin-top: 18px; }
 .voice-dialog .dialog-foot #voice-status.ok { color: var(--sage); font-weight: 700; }
 .voice-dialog .dialog-foot #voice-status.error { color: var(--rose); font-weight: 700; }
 .voice-dialog #voice-go { padding: 10px 20px; }
+.dialog-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.voice-dialog #voice-me { padding: 10px 16px; }

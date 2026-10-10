@@ -170,6 +170,7 @@ def build_services(settings: Settings) -> Services:
             # Who's in view: debounced presence, plus anyone recognised in the last few seconds (the line
             # is judged a moment after it was said).
             lambda: presence.present | set(face.known_boxes(max_age_s=8.0)),
+            db.get_wearer_face,
         ),
         max_utterance_s=settings.max_utterance_s,
         on_line=persona.line_added,

@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS voice_samples (
     ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_voice_samples_face ON voice_samples(face_id, id);
+-- Which face is the user themselves (e.g. the laptop demo, where the user faces the camera).
+CREATE TABLE IF NOT EXISTS wearer (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    face_id TEXT
+);
 CREATE TABLE IF NOT EXISTS self_voice (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     embedding BLOB NOT NULL,
@@ -187,11 +192,12 @@ class Database:
         return None if row is None else row["focused_face_id"]
 
     def pending_lines(self) -> dict[str, list[Segment]]:
-        """Other people's transcript lines not yet sent to Claude, grouped by face (the face <> transcript map)."""
+        """Transcript lines credited to a face and not yet sent to Claude, grouped by face (the face <>
+        transcript map). That's other people's lines, plus the user's own when their face is marked."""
         rows = self._conn.execute(
             "SELECT s.id, s.face_id, s.ts_start, s.ts_end, s.text FROM transcript_segments s "
             "LEFT JOIN profiles p ON p.face_id = s.face_id "
-            "WHERE s.speaker = 'other' AND s.face_id IS NOT NULL AND s.id > COALESCE(p.last_segment_id, 0) "
+            "WHERE s.face_id IS NOT NULL AND s.id > COALESCE(p.last_segment_id, 0) "
             "ORDER BY s.id"
         ).fetchall()
         lines: dict[str, list[Segment]] = {}
@@ -240,6 +246,16 @@ class Database:
         for row in self._conn.execute("SELECT face_id, embedding FROM voice_samples ORDER BY id"):
             samples.setdefault(row["face_id"], []).append(row["embedding"])
         return samples
+
+    def get_wearer_face(self) -> str | None:
+        row = self._conn.execute("SELECT face_id FROM wearer WHERE id = 1").fetchone()
+        return None if row is None else row["face_id"]
+
+    def set_wearer_face(self, face_id: str | None) -> None:
+        self._execute(
+            "INSERT INTO wearer (id, face_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET face_id = excluded.face_id",
+            (face_id,),
+        )
 
     def get_self_voice(self) -> bytes | None:
         row = self._conn.execute("SELECT embedding FROM self_voice WHERE id = 1").fetchone()

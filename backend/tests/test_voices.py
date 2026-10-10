@@ -91,3 +91,36 @@ def test_a_voice_matching_someone_who_has_left_stays_with_the_face_in_view():
     assert voices.judge("person_002", said_by(ALICE), 2.0, in_view={"person_002"}).face_id == "person_002"
     # While both are in view, a clear match still goes to the right one.
     assert voices.judge("person_002", said_by(ALICE), 2.0, in_view={"person_001", "person_002"}).face_id == "person_001"
+
+
+def wearer_gate(voices, in_view):
+    return AttributionGate(
+        None, None, focused_during=lambda s, e: "me", voices=voices, in_view=lambda: set(in_view), wearer=lambda: "me"
+    )
+
+
+def test_someone_elses_voice_while_only_the_user_is_in_view_is_background():
+    gate = wearer_gate(book(), in_view={"me"})
+    assert gate(Utterance(0, 2, "background chatter", "other", voice=said_by(STRANGER))) == Verdict(reason="not_in_view")
+
+
+def test_with_the_user_in_focus_another_face_in_view_gets_the_line():
+    voices = book()
+    gate = wearer_gate(voices, in_view={"me", "bob"})
+    assert gate(Utterance(0, 2, "hi", "other", voice=said_by(BOB))) == Verdict(face_id="bob")
+    # Once bob's voice is known, a different voice is no longer his.
+    teach(voices, "bob", BOB)
+    assert gate(Utterance(0, 2, "hey", "other", voice=said_by(STRANGER))) == Verdict(reason="voice_unknown")
+
+
+def test_the_users_own_words_go_to_their_card_when_marked():
+    from recall.face.tracker import FocusedFaceTracker
+    from recall.matching.matcher import ConversationMatcher
+
+    db = Database(":memory:")
+    db.set_wearer_face("me")
+    tracker = FocusedFaceTracker(confirm_windows=1, absent_confirm_windows=1)
+    tracker.observe(0.0, "me")
+    matcher = ConversationMatcher(db, tracker, 1.0, 5.0, lambda _e: None, lambda _c: None)
+    matcher.on_utterance(Utterance(0.5, 2.5, "I'm a teacher", "self"))
+    assert [segment.text for segment in db.pending_lines()["me"]] == ["I'm a teacher"]
