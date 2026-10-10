@@ -63,12 +63,14 @@ class Settings(BaseSettings):
     # Off by default: the browser's auto gain (needed so quiet mics give usable speech) makes loudness a
     # poor near/far signal. Set it (e.g. -50) only for clients that send un-normalised audio.
     min_other_speech_dbfs: float | None = None
-    # Lip check (InsightFace only): the client sends ~10 fps lip frames while it hears sound. A line is the
+    # Lip check (InsightFace only), off unless RECALL_LIP_CHECK=true: still too unreliable on real
+    # recordings, so by default speech simply goes to the focused face. When on, the client sends ~10 fps
+    # lip frames while it hears sound. A line is the
     # focused face's only if its mouth openness (inner-lip gap / mouth width) varied by at least
     # `lip_min_openness_std` in `lip_min_talking_fraction` of the 1 s slices with sound, and (when there are
     # enough frames, and if `lip_min_sync` is set) rose and fell in step with the loudness. Otherwise it's
     # background. Every line logs both numbers ("lip check ...") for tuning.
-    lip_check: bool = True
+    lip_check: bool = False
     # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
     # True: speech goes to whichever face's mouth moved most.
     lip_picks_speaker: bool = False

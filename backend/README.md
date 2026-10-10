@@ -157,8 +157,9 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
 - **The persona model is `claude-sonnet-5-5` at low effort**, updated about once a minute mid-conversation, with server-side refusal
   fallbacks enabled (`fallbacks="default"`). Override with `RECALL_ANTHROPIC_MODEL` /
   `RECALL_PERSONA_EFFORT`.
-- **Someone else's speech is only attributed to the focused face if it passes two checks**: it is
-  louder than `RECALL_MIN_OTHER_SPEECH_DBFS` (off by default, since the browser normalises loudness), and (InsightFace only) the face's mouth was moving for
+- **Someone else's speech goes to the focused face.** Two optional checks can mark it background
+  instead: it is quieter than `RECALL_MIN_OTHER_SPEECH_DBFS` (off by default, since the browser
+  normalises loudness), or, with `RECALL_LIP_CHECK=true` (off by default; InsightFace only), the face's mouth wasn't moving for
   much of the time there was sound (scored in 1 s slices; lip/sound sync is logged, and can be
   required with `RECALL_LIP_MIN_SYNC`). The
   browser client sends ~10 fps `lip_frames` while it hears sound for the second check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
