@@ -53,14 +53,14 @@ def test_window_ts_is_the_window_start_and_never_exceeds_n_frames():
     assert all(len(m["frames"]) == 3 for m in messages)
 
 
-def test_default_rate_is_one_frame_every_five_seconds():
+def test_default_rate_is_one_frame_per_second():
     defaults = ClientConfig()
     window = FrameWindow(defaults.window_s, defaults.frames_per_window)
-    ticks = [i / 30 for i in range(30 * 15 + 1)]  # 30 fps for 15s
+    ticks = [i / 30 for i in range(30 * 3 + 1)]  # 30 fps for 3s
     grabbed, messages = run_window(window, ticks)
-    assert [m["ts"] for m in messages] == pytest.approx([0.0, 5.0, 10.0])
+    assert [m["ts"] for m in messages] == pytest.approx([0.0, 1.0, 2.0])
     assert all(len(m["frames"]) == 1 for m in messages)
-    assert len(grabbed) == 4  # one per window, incl. the window that just opened at 15s
+    assert len(grabbed) == 4  # one per window, incl. the window that just opened at 3s
 
 
 def test_ws_url_is_derived_from_server_url():
