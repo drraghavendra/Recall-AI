@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS profiles (
     last_segment_id INTEGER NOT NULL DEFAULT 0,
     updated_at REAL NOT NULL
 );
+-- Voice embeddings of lines credited to each face, to build that person's voiceprint.
+CREATE TABLE IF NOT EXISTS voice_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    face_id TEXT NOT NULL,
+    embedding BLOB NOT NULL,
+    seconds REAL NOT NULL,
+    ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voice_samples_face ON voice_samples(face_id, id);
 CREATE TABLE IF NOT EXISTS self_voice (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     embedding BLOB NOT NULL,
@@ -212,6 +221,25 @@ class Database:
             "updated_at = CASE WHEN excluded.persona IS NULL THEN profiles.updated_at ELSE excluded.updated_at END",
             (face_id, None if persona is None else json.dumps(persona), last_segment_id, time.time()),
         )
+
+    def add_voice_sample(self, face_id: str, embedding: bytes, seconds: float, keep: int) -> None:
+        """Store a voice sample for `face_id`, keeping only its `keep` most recent."""
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO voice_samples (face_id, embedding, seconds, ts) VALUES (?, ?, ?, ?)",
+                (face_id, embedding, seconds, time.time()),
+            )
+            self._conn.execute(
+                "DELETE FROM voice_samples WHERE face_id = ? AND id NOT IN "
+                "(SELECT id FROM voice_samples WHERE face_id = ? ORDER BY id DESC LIMIT ?)",
+                (face_id, face_id, keep),
+            )
+
+    def voice_samples(self) -> dict[str, list[bytes]]:
+        samples: dict[str, list[bytes]] = {}
+        for row in self._conn.execute("SELECT face_id, embedding FROM voice_samples ORDER BY id"):
+            samples.setdefault(row["face_id"], []).append(row["embedding"])
+        return samples
 
     def get_self_voice(self) -> bytes | None:
         row = self._conn.execute("SELECT embedding FROM self_voice WHERE id = 1").fetchone()

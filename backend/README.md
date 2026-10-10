@@ -164,6 +164,11 @@ Client read-path rule: fetch `/persona/{face_id}` when a face first appears; aft
   required with `RECALL_LIP_MIN_SYNC`). The
   browser client sends ~10 fps `lip_frames` while it hears sound for the second check. Rejected speech shows as background in the transcript and is never stored. Both thresholds
   are heuristics; tune them with the per-utterance `level` and `lip check` log lines.
+- **Speaker identity** (`RECALL_VOICE_ID`, on by default): each face learns a voiceprint from the
+  lines credited to it (Resemblyzer embeddings, outliers dropped). Once it has 3 lines of 1 s or more,
+  a line said while that face is in focus is background if it doesn't sound like them
+  (`RECALL_VOICE_SAME_THRESHOLD`), and is credited to another known face if it clearly sounds like
+  them (`RECALL_VOICE_OTHER_THRESHOLD`). Tune with the per-line `voice check` log.
 - **The focused face** (`RECALL_FOCUS_RULE`) is the one nearest the centre of the frame, among faces
   at least half as tall as the largest — on glasses, the person you're looking at. It is the face
   that gets enrolled, photographed and credited with other people's speech (InsightFace only;

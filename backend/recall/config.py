@@ -74,6 +74,16 @@ class Settings(BaseSettings):
     # False: speech goes to the focused face, and lips only filter out lines no watched mouth moved for.
     # True: speech goes to whichever face's mouth moved most.
     lip_picks_speaker: bool = False
+    # Speaker identity: each face gets a voiceprint learnt from the lines credited to it (after
+    # `voice_min_samples` lines of at least `voice_min_seconds`). Then a line whose voice scores below
+    # `voice_same_threshold` against the focused face is background, and one scoring at least
+    # `voice_other_threshold` against another known face is credited to them. Each line logs
+    # "voice check ..." scores for tuning.
+    voice_id: bool = True
+    voice_same_threshold: float = 0.65
+    voice_other_threshold: float = 0.75
+    voice_min_samples: int = 3
+    voice_min_seconds: float = 1.0
     lip_min_openness_std: float = 0.02
     lip_min_talking_fraction: float = 0.3
     # Off by default (None): on real recordings the sync score was too noisy to reject on; it's still logged.

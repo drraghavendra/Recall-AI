@@ -114,14 +114,15 @@ class AudioPipeline:
         audio = self._buffer[start - self._buffer_offset : end - self._buffer_offset]
         if audio.size == 0:
             return
-        text, speaker, level, envelope = await asyncio.to_thread(self._analyze, audio)
+        text, speaker, level, envelope, voice = await asyncio.to_thread(self._analyze, audio)
         if any(ch.isalnum() for ch in text):  # Whisper emits e.g. ". . . ." on noise
-            self._listener.on_utterance(Utterance(self._ts(start), self._ts(end), text, speaker, level, envelope))
+            self._listener.on_utterance(Utterance(self._ts(start), self._ts(end), text, speaker, level, envelope, voice))
 
-    def _analyze(self, audio: np.ndarray) -> tuple[str, Speaker, float, tuple[float, ...]]:
+    def _analyze(self, audio: np.ndarray) -> tuple[str, Speaker, float, tuple[float, ...], np.ndarray | None]:
         level = speech_level_dbfs(audio, self._sample_rate)
         envelope = loudness_envelope(audio, self._sample_rate)
-        return self._transcriber.transcribe(audio), self._speaker.classify(audio), level, envelope
+        speaker, voice = self._speaker.classify_and_embed(audio)
+        return self._transcriber.transcribe(audio), speaker, level, envelope, voice
 
     def _trim(self) -> None:
         keep_from = (self._speech_start if self._speech_start is not None else self._fed) - self._preroll

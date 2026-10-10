@@ -49,7 +49,12 @@ def _services(holder: Request | WebSocket) -> Services:
 @app.get("/health")
 async def health(request: Request) -> dict:
     services = _services(request)
-    return {"status": "ok", **services.providers.current, "lip_check": services.lips is not None}
+    return {
+        "status": "ok",
+        **services.providers.current,
+        "lip_check": services.lips is not None,
+        "voice_id": services.voices is not None,
+    }
 
 
 @app.get("/providers")

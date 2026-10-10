@@ -456,7 +456,9 @@
     const speaker = document.createElement("span");
     speaker.className = `transcript-speaker ${event.speaker === "self" ? "self" : background ? "background" : ""}`;
     speaker.textContent = event.speaker === "self" ? "You" : background ? "Nearby" : personName(event.face_id);
-    if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus" : "The person in focus wasn’t moving their lips";
+    if (background) speaker.title = event.reason === "too_quiet" ? "Too quiet to be the person in focus"
+      : event.reason === "voice_unknown" ? "Didn’t sound like the person in focus"
+      : "The person in focus wasn’t moving their lips";
     const text = document.createElement("span");
     text.className = "transcript-text";
     text.textContent = event.text;

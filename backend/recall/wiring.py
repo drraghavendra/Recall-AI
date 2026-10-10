@@ -21,6 +21,7 @@ from recall.face.service import FaceService
 from recall.face.tracker import FocusedFaceTracker, PresenceTracker
 from recall.matching.attribution import AttributionGate
 from recall.matching.matcher import ConversationMatcher
+from recall.matching.voices import VoiceBook
 from recall.persona.llm import ClaudePersonaWriter
 from recall.persona.service import PersonaService
 from recall.providers import ProviderSwitcher
@@ -40,6 +41,7 @@ class Services:
     self_voice: SelfVoiceClassifier
     providers: ProviderSwitcher
     lips: LipService | None = None
+    voices: VoiceBook | None = None
     capture_client_connected: bool = False
     _tasks: list[asyncio.Task] = field(default_factory=list)
 
@@ -142,6 +144,15 @@ def build_services(settings: Settings) -> Services:
         settings.persona_cycle_s,
         settings.persona_batch_s,
     )
+    voices = None
+    if settings.voice_id:
+        voices = VoiceBook(
+            db,
+            settings.voice_same_threshold,
+            settings.voice_other_threshold,
+            settings.voice_min_samples,
+            settings.voice_min_seconds,
+        )
     matcher = ConversationMatcher(
         db,
         tracker,
@@ -155,6 +166,7 @@ def build_services(settings: Settings) -> Services:
             settings.lip_picks_speaker,
             # The focused face for most of the line, else whoever was focused when it started.
             lambda start, end: db.majority_face(start, end) or tracker.face_at(start),
+            voices,
         ),
         max_utterance_s=settings.max_utterance_s,
         on_line=persona.line_added,
@@ -189,4 +201,4 @@ def build_services(settings: Settings) -> Services:
         settings.stt_backend,
         transcriber,
     )
-    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers, lips)
+    return Services(settings, db, hub, face, audio, matcher, persona, self_voice, providers, lips, voices)
